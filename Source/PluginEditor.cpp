@@ -100,7 +100,7 @@ void PatternView::paint (juce::Graphics& g)
     if (rows.empty()) return;
 
     auto area = r.reduced (6.0f, 5.0f);
-    const float labelW = compact ? 64.0f : 96.0f;
+    const float labelW = compact ? 64.0f : 118.0f;
     auto labels = area.removeFromLeft (labelW);
 
     if (seq.barKinds.size() > 1 && ! compact)
@@ -134,7 +134,9 @@ void PatternView::paint (juce::Graphics& g)
         {
             g.setColour (Colours::textDim);
             g.setFont (uiFont (juce::jlimit (9.0f, 12.5f, rowH * 0.8f)));
-            g.drawText (pieceName (rows[i]), juce::Rectangle<float> (labels.getX(), y, labelW - 6.0f, rowH), juce::Justification::centredRight);
+            juce::String txt (pieceName (rows[i]));
+            if (noteOf) txt << "  " << noteOf (rows[i]);
+            g.drawText (txt, juce::Rectangle<float> (labels.getX(), y, labelW - 6.0f, rowH), juce::Justification::centredRight);
         }
     }
 
@@ -372,6 +374,15 @@ MayDrummerEditor::MayDrummerEditor (MayDrummerProcessor& p)
     tabMap.onClick = [this] { showPage (2); };
     tabBrowser.onClick = [this] { showPage (3); };
 
+    content.addAndMakeVisible (saveBtn);
+    content.addAndMakeVisible (loadBtn);
+    saveBtn.setBounds (326, 26, 86, 30);
+    loadBtn.setBounds (326, 60, 86, 30);
+    saveBtn.setTooltip ("Salva tutte le impostazioni attuali con un nome");
+    loadBtn.setTooltip ("Richiama un'impostazione salvata");
+    saveBtn.onClick = [this] { askSaveName(); };
+    loadBtn.onClick = [this] { showLoadMenu(); };
+
     for (auto* pg : { &drummerPage, &songPage, &mapPage, &browserPage })
     {
         content.addChildComponent (*pg);
@@ -581,6 +592,7 @@ void MayDrummerEditor::buildDrummerPage()
     mainView.source = [this] () -> const DrumSequence& { return proc.partSeqs[(size_t) juce::jlimit (0, NumParts - 1, (int) proc.getParam ("part"))]; };
     mainView.playhead = [this] { return proc.getParam ("playMode") < 0.5f ? proc.playPosition.load() : -1.0; };
     mainView.bpm = [this] { return proc.effectiveBpm(); };
+    mainView.noteOf = [this] (int p) { return proc.getNote (p); };
     mainView.makeFiles = [this] { return juce::StringArray { proc.writePartFile ((int) proc.getParam ("part")).getFullPathName() }; };
 
     pg.addAndMakeVisible (dragPart);
@@ -646,7 +658,7 @@ void MayDrummerEditor::buildDrummerPage()
     lvLabel.setColour (juce::Label::backgroundColourId, Colours::lcd);
     lvLabel.setColour (juce::Label::outlineColourId, Colours::panelLine);
     lvLabel.setColour (juce::Label::textColourId, Colours::gold);
-    lvLabel.setFont (uiFont (12.0f, true));
+    lvLabel.setFont (uiFont (10.5f, true));
     lvLabel.setMinimumHorizontalScale (0.55f);
     lvUp.setTooltip ("Rendi la traccia piu complessa");
     lvDn.setTooltip ("Semplifica la traccia");
@@ -758,6 +770,7 @@ void MayDrummerEditor::buildSongPage()
     songView.source = [this] () -> const DrumSequence& { return proc.songSeq; };
     songView.playhead = [this] { return proc.getParam ("playMode") > 0.5f ? proc.playPosition.load() : -1.0; };
     songView.bpm = [this] { return proc.effectiveBpm(); };
+    songView.noteOf = [this] (int p) { return proc.getNote (p); };
     songView.makeFiles = [this] { return juce::StringArray { proc.writeSongFile().getFullPathName() }; };
 
     pg.addAndMakeVisible (dragSong);
@@ -913,7 +926,7 @@ void MayDrummerEditor::Content::paint (juce::Graphics& g)
     g.drawHorizontalLine ((int) bar.getY() + 1, bar.getX() + 8, bar.getRight() - 8);
 
     // display a sinistra
-    auto lcd = juce::Rectangle<float> (18, 26, 380, 64);
+    auto lcd = juce::Rectangle<float> (18, 26, 300, 64);
     g.setColour (Colours::lcd);
     g.fillRoundedRectangle (lcd, 6.0f);
     g.setColour (juce::Colour (0x30ffffff));
@@ -923,7 +936,9 @@ void MayDrummerEditor::Content::paint (juce::Graphics& g)
     e.proc.effectiveMeter (num, den);
     g.setColour (Colours::gold);
     g.setFont (uiFont (11.0f, true));
-    g.drawText ("MAY STUDIO MIDI DRUMMER", lcd.reduced (10, 5).removeFromTop (14), juce::Justification::centredLeft);
+    g.drawFittedText (e.proc.currentUserPreset.isNotEmpty() ? "IMPOSTAZIONE: " + e.proc.currentUserPreset.toUpperCase()
+                                                       : juce::String ("MAY STUDIO MIDI DRUMMER"),
+                      lcd.reduced (10, 5).removeFromTop (14).toNearestInt(), juce::Justification::centredLeft, 1);
     g.setColour (Colours::cream);
     g.setFont (uiFont (15.0f, true));
     g.drawFittedText (pat.fullName, lcd.reduced (10, 5).withTrimmedTop (14).withHeight (20).toNearestInt(), juce::Justification::centredLeft, 1);
@@ -1044,6 +1059,7 @@ void MayDrummerEditor::buildBrowserPage()
     browserView.setBounds (250, 596, 882, 168);
     browserView.source = [this] () -> const DrumSequence& { return proc.partSeqs[PMain]; };
     browserView.bpm = [this] { return proc.effectiveBpm(); };
+    browserView.noteOf = [this] (int p) { return proc.getNote (p); };
     browserView.playhead = [this] { return (proc.getParam ("playMode") < 0.5f && (int) proc.getParam ("part") == PMain) ? proc.playPosition.load() : -1.0; };
     browserView.makeFiles = [this] { return juce::StringArray { proc.writePartFile (PMain).getFullPathName() }; };
 
@@ -1190,6 +1206,82 @@ void MayDrummerEditor::BrowserModel::listBoxItemDoubleClicked (int row, const ju
     const auto& r = rows[(size_t) row];
     ed.proc.loadPattern (r.g, r.s, r.p);
     ed.showPage (0);
+}
+
+// ---------------------------------------------------------------- Impostazioni salvate
+void MayDrummerEditor::askSaveName()
+{
+    auto* aw = new juce::AlertWindow ("Salva impostazioni",
+                                      "Dai un nome alle impostazioni attuali: genere, preset, misura, humanize, "
+                                      "May Drummer, mappa note e struttura della song.",
+                                      juce::MessageBoxIconType::NoIcon, this);
+    auto suggestion = proc.currentUserPreset.isNotEmpty() ? proc.currentUserPreset
+                                                          : proc.currentPattern().fullName.replace (" / ", " ");
+    aw->setLookAndFeel (&lnf);
+    aw->addTextEditor ("name", suggestion, "Nome");
+    aw->addButton ("SALVA", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton ("ANNULLA", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    aw->enterModalState (true, juce::ModalCallbackFunction::create ([this, aw] (int result)
+    {
+        if (result != 1) return;
+        const auto name = aw->getTextEditorContents ("name").trim();
+        if (name.isEmpty()) return;
+        if (proc.listUserPresets().contains (name) && name != proc.currentUserPreset)
+        {
+            juce::AlertWindow::showAsync (juce::MessageBoxOptions()
+                                              .withTitle ("Sostituire?")
+                                              .withMessage ("Esiste gia un'impostazione chiamata \"" + name + "\". Vuoi sostituirla?")
+                                              .withButton ("SOSTITUISCI").withButton ("ANNULLA")
+                                              .withAssociatedComponent (this),
+                                          [this, name] (int r) { if (r == 1) proc.saveUserPreset (name); content.repaint(); });
+            return;
+        }
+        proc.saveUserPreset (name);
+        content.repaint();
+    }), true);
+}
+
+void MayDrummerEditor::showLoadMenu()
+{
+    const auto names = proc.listUserPresets();
+    juce::PopupMenu m, del;
+    m.addSectionHeader ("IMPOSTAZIONI SALVATE");
+    if (names.isEmpty())
+        m.addItem (-1, "Nessuna impostazione salvata: usa SALVA", false);
+    for (int i = 0; i < names.size(); ++i)
+    {
+        m.addItem (1 + i, names[i], true, names[i] == proc.currentUserPreset);
+        del.addItem (1001 + i, names[i]);
+    }
+    m.addSeparator();
+    m.addSubMenu ("Elimina", del, ! names.isEmpty());
+    m.addItem (2001, "Apri la cartella delle impostazioni");
+
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&loadBtn), [this, names] (int r)
+    {
+        if (r >= 1 && r <= names.size())
+        {
+            proc.loadUserPreset (names[r - 1]);
+            snapshotPreviews();
+            content.repaint();
+        }
+        else if (r >= 1001 && r <= 1000 + names.size())
+        {
+            const auto name = names[r - 1001];
+            juce::AlertWindow::showAsync (juce::MessageBoxOptions()
+                                              .withTitle ("Eliminare?")
+                                              .withMessage ("Vuoi eliminare l'impostazione \"" + name + "\"?")
+                                              .withButton ("ELIMINA").withButton ("ANNULLA")
+                                              .withAssociatedComponent (this),
+                                          [this, name] (int res) { if (res == 1) proc.deleteUserPreset (name); content.repaint(); });
+        }
+        else if (r == 2001)
+        {
+            auto dir = proc.userPresetFolder();
+            dir.createDirectory();
+            dir.revealToUser();
+        }
+    });
 }
 
 void MayDrummerEditor::layoutDrummer() {}

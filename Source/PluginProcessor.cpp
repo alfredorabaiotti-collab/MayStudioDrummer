@@ -91,6 +91,13 @@ MayDrummerProcessor::MayDrummerProcessor()
 {
     resetNoteMap();
     loadFavourites();
+    // pulizia delle cartelle temporanee dei trascinamenti precedenti (piu vecchie di un giorno)
+    {
+        auto root = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("MayStudioMidiDrummer");
+        for (auto& d : root.findChildFiles (juce::File::findDirectories, false))
+            if (d.getLastModificationTime() < juce::Time::getCurrentTime() - juce::RelativeTime::days (1))
+                d.deleteRecursively();
+    }
     for (auto* id : paramIds) apvts.addParameterListener (id, this);
     regenerateNow();
     startTimerHz (5);
@@ -105,12 +112,17 @@ MayDrummerProcessor::~MayDrummerProcessor()
 void MayDrummerProcessor::resetNoteMap()
 {
     for (int i = 0; i < NumPieces; ++i) noteMap[(size_t) i] = gmNote (i);
+    mapChanged = true;
     generation++;
 }
 
 void MayDrummerProcessor::setNote (int piece, int note)
 {
-    noteMap[(size_t) piece] = juce::jlimit (0, 127, note);
+    const int n = juce::jlimit (0, 127, note);
+    if (noteMap[(size_t) piece].load() == n) return;
+    noteMap[(size_t) piece] = n;
+    mapChanged = true;      // il thread audio spegne le note rimaste accese con la vecchia mappa
+    generation++;           // l'interfaccia ridisegna parti e anteprime
 }
 
 void MayDrummerProcessor::setParam (const juce::String& id, float plainValue)
@@ -157,6 +169,73 @@ void MayDrummerProcessor::toggleFavourite (int g, int s, int p)
     f.getParentDirectory().createDirectory();
     f.replaceWithText (lines.joinIntoString ("\n"));
     generation++;
+}
+
+juce::File MayDrummerProcessor::userPresetFolder() const
+{
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+               .getChildFile ("MayStudioMidiDrummer").getChildFile ("Impostazioni");
+}
+
+static juce::String safePresetName (const juce::String& n)
+{
+    return n.trim().removeCharacters ("\\/:*?\"<>|").substring (0, 60);
+}
+
+juce::StringArray MayDrummerProcessor::listUserPresets() const
+{
+    juce::StringArray names;
+    for (auto& f : userPresetFolder().findChildFiles (juce::File::findFiles, false, "*.maydrummer"))
+        names.add (f.getFileNameWithoutExtension());
+    names.sortNatural();
+    return names;
+}
+
+bool MayDrummerProcessor::saveUserPreset (const juce::String& rawName)
+{
+    const auto name = safePresetName (rawName);
+    if (name.isEmpty()) return false;
+    auto state = apvts.copyState();
+    auto map = state.getOrCreateChildWithName ("NoteMap", nullptr);
+    for (int i = 0; i < NumPieces; ++i) map.setProperty ("n" + juce::String (i), noteMap[(size_t) i].load(), nullptr);
+    state.setProperty ("presetName", name, nullptr);
+    auto xml = state.createXml();
+    if (xml == nullptr) return false;
+    auto dir = userPresetFolder();
+    dir.createDirectory();
+    const bool ok = xml->writeTo (dir.getChildFile (name + ".maydrummer"));
+    if (ok) { currentUserPreset = name; generation++; }
+    return ok;
+}
+
+bool MayDrummerProcessor::loadUserPreset (const juce::String& name)
+{
+    auto xml = juce::XmlDocument::parse (userPresetFolder().getChildFile (safePresetName (name) + ".maydrummer"));
+    if (xml == nullptr) return false;
+    auto state = juce::ValueTree::fromXml (*xml);
+    if (! state.hasType (apvts.state.getType())) return false;
+
+    const float previewWas = getParam ("preview");
+    auto map = state.getChildWithName ("NoteMap");
+    if (map.isValid())
+        for (int i = 0; i < NumPieces; ++i)
+            noteMap[(size_t) i] = (int) map.getProperty ("n" + juce::String (i), gmNote (i));
+    mapChanged = true;
+    lastPatternKey = {};   // non azzerare il ritmo alternativo salvato
+    apvts.replaceState (state);
+    setParam ("preview", previewWas);
+    currentUserPreset = safePresetName (name);
+    regenerateNow();
+    return true;
+}
+
+bool MayDrummerProcessor::deleteUserPreset (const juce::String& name)
+{
+    auto f = userPresetFolder().getChildFile (safePresetName (name) + ".maydrummer");
+    const bool ok = f.moveToTrash() || f.deleteFile();
+    if (ok && currentUserPreset == name) currentUserPreset = {};
+    generation++;
+    return ok;
 }
 
 void MayDrummerProcessor::loadPattern (int g, int s, int p)
@@ -306,6 +385,13 @@ void MayDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     buffer.clear();
     const int numSamples = buffer.getNumSamples();
     const int channel = juce::jlimit (1, 16, (int) getParam ("channel"));
+    if (mapChanged.exchange (false))
+    {
+        for (int i = 0; i < numPendingOffs; ++i)
+            midi.addEvent (juce::MidiMessage::noteOff (pendingOffs[(size_t) i].channel, pendingOffs[(size_t) i].note), 0);
+        numPendingOffs = 0;
+        midi.addEvent (juce::MidiMessage::allNotesOff (channel), 0);
+    }
 
     juce::MidiBuffer out;
 
@@ -428,7 +514,10 @@ juce::String MayDrummerProcessor::baseFileName() const
 
 juce::File MayDrummerProcessor::makeTempFile (const juce::String& suffix) const
 {
-    auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("MayStudioMidiDrummer");
+    // Una cartella nuova per ogni trascinamento: il nome del clip resta pulito,
+    // ma la DAW non puo riusare un file importato in precedenza con le note vecchie.
+    auto root = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("MayStudioMidiDrummer");
+    auto dir = root.getChildFile (juce::String (juce::Time::currentTimeMillis()) + "_" + juce::String (exportCounter++));
     dir.createDirectory();
     return dir.getChildFile (baseFileName() + "_" + suffix.replaceCharacter (' ', '_') + ".mid");
 }
@@ -488,6 +577,7 @@ void MayDrummerProcessor::getStateInformation (juce::MemoryBlock& dest)
     auto state = apvts.copyState();
     auto map = state.getOrCreateChildWithName ("NoteMap", nullptr);
     for (int i = 0; i < NumPieces; ++i) map.setProperty ("n" + juce::String (i), noteMap[(size_t) i].load(), nullptr);
+    state.setProperty ("presetName", currentUserPreset, nullptr);
     if (auto xml = state.createXml()) copyXmlToBinary (*xml, dest);
 }
 
@@ -502,6 +592,8 @@ void MayDrummerProcessor::setStateInformation (const void* data, int size)
             if (map.isValid())
                 for (int i = 0; i < NumPieces; ++i)
                     noteMap[(size_t) i] = (int) map.getProperty ("n" + juce::String (i), gmNote (i));
+            currentUserPreset = state.getProperty ("presetName").toString();
+            mapChanged = true;
             apvts.replaceState (state);
             triggerAsyncUpdate();
         }

@@ -46,6 +46,13 @@ public:
         setColour (juce::TextButton::textColourOnId, juce::Colours::white);
         setColour (juce::ToggleButton::textColourId, Colours::cream);
         setColour (juce::ToggleButton::tickColourId, Colours::gold);
+        setColour (juce::AlertWindow::backgroundColourId, juce::Colour (0xff1b1814));
+        setColour (juce::AlertWindow::textColourId, Colours::cream);
+        setColour (juce::AlertWindow::outlineColourId, Colours::gold);
+        setColour (juce::TextEditor::backgroundColourId, Colours::lcd);
+        setColour (juce::TextEditor::textColourId, Colours::cream);
+        setColour (juce::TextEditor::outlineColourId, Colours::panelLine);
+        setColour (juce::TextEditor::focusedOutlineColourId, Colours::gold);
     }
 
     juce::Font getComboBoxFont (juce::ComboBox&) override { return uiFont (14.0f, true); }

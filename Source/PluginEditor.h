@@ -46,6 +46,7 @@ public:
     std::function<const DrumSequence&()> source;
     std::function<double()> playhead;
     std::function<double()> bpm;   // per disegnare gli spostamenti di timing umanizzati
+    std::function<int (int)> noteOf;   // nota MIDI di ogni strumento, mostrata accanto al nome
     juce::String title;
     bool compact = false;
     juce::Colour accent = Colours::gold;
@@ -175,6 +176,9 @@ private:
     juce::Image logo;
     juce::TooltipWindow tooltips { this, 600 };
 
+    juce::TextButton saveBtn { "SALVA" }, loadBtn { "RICHIAMA" };
+    void askSaveName();
+    void showLoadMenu();
     juce::TextButton tabDrummer { "DRUMMER" }, tabBrowser { "BROWSER" }, tabSong { "SONG" }, tabMap { "MAPPA" };
     int page = 0;
     juce::Component drummerPage, songPage, mapPage, browserPage;

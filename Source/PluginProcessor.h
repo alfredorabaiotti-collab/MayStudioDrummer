@@ -78,6 +78,14 @@ public:
     int numFavourites() const { return (int) favourites.size(); }
     void loadPattern (int g, int s, int p);
 
+    // Impostazioni salvate dall'utente, con nome (valide per tutti i progetti)
+    juce::File userPresetFolder() const;
+    juce::StringArray listUserPresets() const;
+    bool saveUserPreset (const juce::String& name);
+    bool loadUserPreset (const juce::String& name);
+    bool deleteUserPreset (const juce::String& name);
+    juce::String currentUserPreset;
+
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
     void parameterChanged (const juce::String&, float) override;
@@ -102,6 +110,8 @@ private:
     std::atomic<double> hostBpm { 0.0 };
     std::atomic<int> hostNum { 0 }, hostDen { 0 };
     std::atomic<int> pendingPart { -1 };
+    std::atomic<bool> mapChanged { false };
+    mutable int exportCounter = 0;
     int lastHostNum = 0, lastHostDen = 0;
     double lastHostBpm = 0;
 

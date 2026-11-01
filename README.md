@@ -16,6 +16,7 @@ Novità:
 - **Rullante**: Normale, Side stick nel Main, Side stick sempre.
 - **Ritmo alternativo**: ricombina cassa, piatti e percussioni con altri groove dello stesso genere; ORIGINALE per tornare indietro.
 - **Browser**: 1600 preset raggruppati per Genere > Sottogenere, con filtri Carattere (Leggero, Medio, Intenso), Feel (Dritto, Shuffle, Half-time) e Variante, ricerca a più parole e preferiti ★ (salvati per tutti i progetti).
+- **Impostazioni salvate**: SALVA e RICHIAMA in alto a sinistra memorizzano tutte le impostazioni (genere, preset, humanize, May Drummer, mappa note, song) con un nome, valide per tutti i progetti.
 - **Suoni interni**: kit di batteria sintetico integrato per ascoltare subito l'anteprima (si spegne se usi Addictive Drums o un altro strumento). Si può suonare anche da tastiera MIDI.
 - **Singoli strumenti**: trascina solo Cassa, Rullante, Hi-Hat, Tom, Piatti o Percussioni, oppure SEPARATI per avere un file per strumento.
 
