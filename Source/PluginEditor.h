@@ -121,10 +121,10 @@ private:
 class GenreList : public juce::Component
 {
 public:
-    struct Item { int id; juce::String name; int count; };
+    struct Item { int id; int sub; juce::String name; int count; bool header; };
     std::vector<Item> items;
-    int selected = -1;
-    std::function<void (int)> onSelect;
+    int selected = -1, selectedSub = -1;
+    std::function<void (int, int)> onSelect;
     void paint (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent& e) override;
 };
@@ -184,7 +184,8 @@ private:
     {
     public:
         explicit BrowserModel (MayDrummerEditor& e) : ed (e) {}
-        std::vector<std::array<int, 3>> rows;
+        struct Row { bool header; int g, s, p; juce::String text; };
+        std::vector<Row> rows;
         int getNumRows() override { return (int) rows.size(); }
         void paintListBoxItem (int row, juce::Graphics& g, int w, int h, bool selected) override;
         void listBoxItemClicked (int row, const juce::MouseEvent& e) override;
@@ -194,6 +195,11 @@ private:
     BrowserModel browserModel { *this };
     juce::ListBox browserList { "preset", &browserModel };
     may::GenreList genreList;
+    juce::Viewport genreViewport;
+    std::vector<std::unique_ptr<juce::TextButton>> energyChips, feelChips, variantChips;
+    juce::String fEnergy, fFeel, fVariant;
+    int browserSub = -1;
+    void makeChips (std::vector<std::unique_ptr<juce::TextButton>>& v, const juce::StringArray& names, juce::String& target, int x, int y);
     juce::TextEditor searchBox;
     juce::ToggleButton favOnly { "Solo preferiti" };
     may::PatternView browserView;
@@ -221,6 +227,10 @@ private:
     std::array<may::PatternView, 3> mdPreview;
     std::array<may::DrumSequence, 3> mdSeqs;
     juce::Label mdHint;
+    juce::Slider kitVolSlider { juce::Slider::LinearBar, juce::Slider::TextBoxLeft };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> kitVolAtt;
+    juce::TextEditor quickSearch;
+    juce::Label presetInfo;
     juce::Slider bpmSlider { juce::Slider::LinearBar, juce::Slider::TextBoxLeft };
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bpmAtt;
 

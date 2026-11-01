@@ -8,6 +8,7 @@ struct Pattern
 {
     juce::String name;        // nome del preset
     juce::String fullName;    // Genere / Sottogenere / Preset
+    juce::String label, energy, feel, vgroup, searchText;   // per il browser
     int style = 0;
     int sub = 0;
     int grid = 4;             // suddivisioni per quarto: 4 = sedicesimi, 3 = terzine
@@ -29,14 +30,14 @@ struct Pattern
     }
 };
 
-// Libreria: 16 generi x 4 sottogeneri x 5 preset = 320 pattern
+// Libreria: 16 generi x 10 sottogeneri x 10 preset = 1600 pattern
 class PatternLibrary
 {
 public:
     static const PatternLibrary& get();
 
-    static constexpr int subsPerStyle = 4;
-    static constexpr int presetsPerSub = 5;
+    static constexpr int subsPerStyle = 10;
+    static constexpr int presetsPerSub = 10;
 
     static const char* styleName (int s);
     static juce::StringArray styleNames();

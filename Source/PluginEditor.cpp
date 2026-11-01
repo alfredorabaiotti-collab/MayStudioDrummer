@@ -199,28 +199,21 @@ void PresetStrip::paint (juce::Graphics& g)
 
     for (int i = 0; i < n; ++i)
     {
-        auto r = juce::Rectangle<float> (w * (float) i, 0.0f, w, (float) getHeight()).reduced (4.0f, 2.0f);
+        auto r = juce::Rectangle<float> (w * (float) i, 0.0f, w, (float) getHeight()).reduced (2.0f, 1.0f);
         const bool on = (i == sel);
         g.setColour (on ? juce::Colour (0xff3a2d18) : (i == hoverIdx ? juce::Colour (0xff26221d) : juce::Colour (0xff17140f)));
         g.fillRoundedRectangle (r, 6.0f);
         g.setColour (on ? Colours::gold : Colours::panelLine);
         g.drawRoundedRectangle (r, 6.0f, on ? 1.6f : 1.0f);
 
-        auto circle = r.removeFromLeft (r.getHeight()).reduced (8.0f);
-        g.setColour (on ? Colours::gold : juce::Colour (0xff5a544b));
-        g.drawEllipse (circle, 1.6f);
-        juce::Path tri;
-        const auto c = circle.getCentre();
-        const float s = circle.getWidth() * 0.22f;
-        tri.addTriangle (c.x - s * 0.8f, c.y - s, c.x - s * 0.8f, c.y + s, c.x + s * 1.1f, c.y);
-        g.fillPath (tri);
-
-        auto starR = r.removeFromRight (34.0f).withSizeKeepingCentre (20.0f, 20.0f);
-        drawStar (g, starR, isFav && isFav (i));
-
+        drawStar (g, juce::Rectangle<float> (r.getRight() - 22.0f, r.getY() + 4.0f, 16.0f, 16.0f), isFav && isFav (i));
+        auto tr = r.reduced (8.0f, 4.0f);
+        g.setColour (Colours::gold);
+        g.setFont (uiFont (15.0f, true));
+        g.drawText (juce::String (i + 1).paddedLeft ('0', 2), tr.removeFromTop (tr.getHeight() * 0.5f), juce::Justification::bottomLeft);
         g.setColour (on ? juce::Colours::white : Colours::cream);
-        g.setFont (uiFont (14.5f, on));
-        g.drawFittedText (list[i], r.toNearestInt().reduced (4, 0), juce::Justification::centredLeft, 2);
+        g.setFont (uiFont (12.0f, on));
+        g.drawFittedText (list[i], tr.toNearestInt(), juce::Justification::topLeft, 1, 0.8f);
     }
 }
 
@@ -228,7 +221,7 @@ void PresetStrip::mouseDown (const juce::MouseEvent& e)
 {
     const int i = indexAt (e.x);
     const float w = (float) getWidth() / (float) PatternLibrary::presetsPerSub;
-    if (e.position.x > w * (float) (i + 1) - 40.0f) { if (onStar) onStar (i); repaint(); return; }
+    if (e.position.x > w * (float) (i + 1) - 26.0f && e.position.y < 24.0f) { if (onStar) onStar (i); repaint(); return; }
     if (onSelect) onSelect (i);
 }
 
@@ -243,31 +236,41 @@ void may::drawStar (juce::Graphics& g, juce::Rectangle<float> r, bool on)
 // ============================================================ GenreList
 void GenreList::paint (juce::Graphics& g)
 {
-    const float h = 31.0f;
+    const float h = 30.0f;
     for (size_t i = 0; i < items.size(); ++i)
     {
+        const auto& it = items[i];
         auto r = juce::Rectangle<float> (0.0f, h * (float) i, (float) getWidth(), h - 2.0f);
-        const bool on = items[i].id == selected;
+        if (it.header)
+        {
+            g.setColour (Colours::gold);
+            g.setFont (uiFont (11.0f, true));
+            g.drawText (it.name, r.reduced (10.0f, 0.0f), juce::Justification::bottomLeft);
+            continue;
+        }
+        const bool on = it.id == selected && it.sub == selectedSub;
         if (on)
         {
             g.setColour (juce::Colour (0xff3a2d18)); g.fillRoundedRectangle (r, 5.0f);
             g.setColour (Colours::gold); g.drawRoundedRectangle (r.reduced (0.5f), 5.0f, 1.0f);
         }
         auto tr = r.reduced (10.0f, 0.0f);
-        if (items[i].id == -2) { drawStar (g, tr.removeFromLeft (16.0f).withSizeKeepingCentre (14.0f, 14.0f), true); tr.removeFromLeft (6.0f); }
+        if (it.sub >= 0) tr.removeFromLeft (14.0f);
+        if (it.id == -2 && it.sub < 0) { drawStar (g, tr.removeFromLeft (16.0f).withSizeKeepingCentre (14.0f, 14.0f), true); tr.removeFromLeft (6.0f); }
         g.setColour (on ? juce::Colours::white : Colours::cream);
-        g.setFont (uiFont (14.0f, true));
-        g.drawText (items[i].name, tr, juce::Justification::centredLeft);
+        g.setFont (uiFont (it.sub >= 0 ? 13.0f : 14.0f, it.sub < 0));
+        g.drawText (it.name, tr, juce::Justification::centredLeft);
         g.setColour (Colours::textDim);
         g.setFont (uiFont (12.0f));
-        g.drawText (juce::String (items[i].count), tr, juce::Justification::centredRight);
+        g.drawText (juce::String (it.count), tr, juce::Justification::centredRight);
     }
 }
 
 void GenreList::mouseDown (const juce::MouseEvent& e)
 {
-    const int i = (int) (e.position.y / 31.0f);
-    if (i >= 0 && i < (int) items.size() && onSelect) onSelect (items[(size_t) i].id);
+    const int i = (int) (e.position.y / 30.0f);
+    if (i >= 0 && i < (int) items.size() && ! items[(size_t) i].header && onSelect)
+        onSelect (items[(size_t) i].id, items[(size_t) i].sub);
 }
 
 // ============================================================ XYPad
@@ -303,7 +306,6 @@ void XYPad::mouseUp (const juce::MouseEvent&)
 void XYPad::paint (juce::Graphics& g)
 {
     auto a = padArea();
-    // sfondo: caldo in alto (forte), freddo in basso (leggero)
     juce::ColourGradient gr (juce::Colour (0xff5a2a18), a.getX(), a.getY(), juce::Colour (0xff15130f), a.getX(), a.getBottom(), false);
     g.setGradientFill (gr);
     g.fillRoundedRectangle (a, 6.0f);
@@ -518,7 +520,37 @@ void MayDrummerEditor::buildDrummerPage()
     prevBtn.setBounds (24, 144, 30, 42);
     nextBtn.setBounds (1102, 144, 30, 42);
     presets.setBounds (58, 142, 1040, 46);
-    presets.names = [this] { return PatternLibrary::get().presetNames ((int) proc.getParam ("genre"), (int) proc.getParam ("sub")); };
+    presets.names = [this]
+    {
+        juce::StringArray a;
+        for (int i = 0; i < PatternLibrary::presetsPerSub; ++i)
+            a.add (PatternLibrary::get().getPattern ((int) proc.getParam ("genre"), (int) proc.getParam ("sub"), i).label);
+        return a;
+    };
+
+    pg.addAndMakeVisible (presetInfo);
+    presetInfo.setBounds (196, 116, 520, 20);
+    presetInfo.setFont (uiFont (12.0f));
+    presetInfo.setColour (juce::Label::textColourId, Colours::textDim);
+    pg.addAndMakeVisible (quickSearch);
+    quickSearch.setBounds (820, 116, 312, 24);
+    quickSearch.setTextToShowWhenEmpty ("Cerca tra 1600 preset (es. rock shuffle leggero)", Colours::textDim);
+    quickSearch.setColour (juce::TextEditor::backgroundColourId, Colours::lcd);
+    quickSearch.setColour (juce::TextEditor::textColourId, Colours::cream);
+    quickSearch.setColour (juce::TextEditor::outlineColourId, Colours::panelLine);
+    quickSearch.setColour (juce::TextEditor::focusedOutlineColourId, Colours::gold);
+    quickSearch.setFont (uiFont (13.0f));
+    quickSearch.setIndents (8, 4);
+    auto openSearch = [this]
+    {
+        searchBox.setText (quickSearch.getText(), false);
+        browserGenre = -1; browserSub = -1;
+        showPage (3);
+        searchBox.grabKeyboardFocus();
+        searchBox.moveCaretToEnd();
+    };
+    quickSearch.onReturnKey = openSearch;
+    quickSearch.onTextChange = [this, openSearch] { if (quickSearch.getText().length() >= 3) openSearch(); };
     presets.selected = [this] { return (int) proc.getParam ("preset"); };
     presets.onSelect = [this] (int i) { proc.setParam ("preset", (float) i); };
     presets.isFav = [this] (int i) { return proc.isFavourite ((int) proc.getParam ("genre"), (int) proc.getParam ("sub"), i); };
@@ -552,17 +584,24 @@ void MayDrummerEditor::buildDrummerPage()
     mainView.makeFiles = [this] { return juce::StringArray { proc.writePartFile ((int) proc.getParam ("part")).getFullPathName() }; };
 
     pg.addAndMakeVisible (dragPart);
-    dragPart.setBounds (856, 236, 276, 96);
+    dragPart.setBounds (856, 236, 276, 86);
     dragPart.makeFiles = mainView.makeFiles;
     pg.addAndMakeVisible (dragAll);
-    dragAll.setBounds (856, 340, 276, 60);
+    dragAll.setBounds (856, 328, 276, 52);
     dragAll.makeFiles = [this] { return proc.writeAllPartFiles(); };
 
     pg.addAndMakeVisible (previewBtn);
-    previewBtn.setBounds (856, 410, 132, 28);
+    previewBtn.setBounds (856, 386, 132, 26);
     previewBtn.setClickingTogglesState (true);
     toggleAtts.push_back (std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, "preview", previewBtn));
-    combo ("playMode", pg).setBounds (998, 410, 134, 28);
+    combo ("playMode", pg).setBounds (998, 386, 134, 26);
+    toggle ("kitOn", "Suoni interni", pg).setBounds (856, 416, 130, 24);
+    pg.addAndMakeVisible (kitVolSlider);
+    kitVolSlider.setBounds (998, 417, 134, 22);
+    kitVolSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 134, 22);
+    kitVolAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, "kitVol", kitVolSlider);
+    kitVolSlider.textFromValueFunction = [] (double v) { return "Vol kit " + juce::String (juce::roundToInt (v)) + "%"; };
+    kitVolSlider.updateText();
     previewBtn.setTooltip ("Invia il MIDI anche a trasporto fermo");
     pg.addAndMakeVisible (shuffleBtn);
     pg.addAndMakeVisible (originalBtn);
@@ -607,7 +646,8 @@ void MayDrummerEditor::buildDrummerPage()
     lvLabel.setColour (juce::Label::backgroundColourId, Colours::lcd);
     lvLabel.setColour (juce::Label::outlineColourId, Colours::panelLine);
     lvLabel.setColour (juce::Label::textColourId, Colours::gold);
-    lvLabel.setFont (uiFont (13.0f, true));
+    lvLabel.setFont (uiFont (12.0f, true));
+    lvLabel.setMinimumHorizontalScale (0.55f);
     lvUp.setTooltip ("Rendi la traccia piu complessa");
     lvDn.setTooltip ("Semplifica la traccia");
     lvUp.onClick = [this] { proc.setParam ("level", juce::jmin (5.0f, proc.getParam ("level") + 1.0f)); };
@@ -928,16 +968,41 @@ void MayDrummerEditor::Content::paint (juce::Graphics& g)
 }
 
 // ---------------------------------------------------------------- Pagina BROWSER
+void MayDrummerEditor::makeChips (std::vector<std::unique_ptr<juce::TextButton>>& v, const juce::StringArray& names,
+                                  juce::String& target, int x, int y)
+{
+    for (int i = 0; i <= names.size(); ++i)
+    {
+        const juce::String value = i == 0 ? juce::String() : names[i - 1];
+        auto b = std::make_unique<juce::TextButton> (i == 0 ? juce::String ("Tutti") : value);
+        const int w = juce::jmax (52, uiFont (12.0f, true).getStringWidth (b->getButtonText()) + 22);
+        b->setBounds (x, y, w, 22);
+        x += w + 5;
+        b->onClick = [this, &target, value] { target = value; rebuildBrowser(); };
+        browserPage.addAndMakeVisible (*b);
+        v.push_back (std::move (b));
+    }
+}
+
 void MayDrummerEditor::buildBrowserPage()
 {
     auto& pg = browserPage;
-    pg.addAndMakeVisible (genreList);
-    genreList.setBounds (24, 40, 210, 18 * 31);
-    genreList.onSelect = [this] (int id) { browserGenre = id; rebuildBrowser(); };
+    pg.addAndMakeVisible (genreViewport);
+    genreViewport.setBounds (24, 40, 216, 772);
+    genreViewport.setViewedComponent (&genreList, false);
+    genreViewport.setScrollBarsShown (true, false);
+    genreViewport.setScrollBarThickness (8);
+    genreList.onSelect = [this] (int id, int sub)
+    {
+        if (id >= 0 && sub < 0 && id == browserGenre && browserSub < 0) { browserGenre = -1; }
+        else { browserGenre = id; }
+        browserSub = sub;
+        rebuildBrowser();
+    };
 
     pg.addAndMakeVisible (searchBox);
     searchBox.setBounds (250, 40, 420, 32);
-    searchBox.setTextToShowWhenEmpty ("Cerca: genere, sottogenere o preset (es. shuffle, ride, bossa)", Colours::textDim);
+    searchBox.setTextToShowWhenEmpty ("Cerca: piu parole insieme (es. funk ghost intenso, bossa ride)", Colours::textDim);
     searchBox.setColour (juce::TextEditor::backgroundColourId, Colours::lcd);
     searchBox.setColour (juce::TextEditor::textColourId, Colours::cream);
     searchBox.setColour (juce::TextEditor::outlineColourId, Colours::panelLine);
@@ -956,13 +1021,20 @@ void MayDrummerEditor::buildBrowserPage()
     browserCount.setJustificationType (juce::Justification::centredRight);
     browserCount.setColour (juce::Label::textColourId, Colours::textDim);
 
+    caption ("CARATTERE", pg).setBounds (246, 84, 90, 18);
+    makeChips (energyChips, { "Leggero", "Medio", "Intenso" }, fEnergy, 336, 82);
+    caption ("FEEL", pg).setBounds (636, 84, 50, 18);
+    makeChips (feelChips, { "Dritto", "Shuffle", "Half-time" }, fFeel, 686, 82);
+    caption ("VARIANTE", pg).setBounds (246, 112, 90, 18);
+    makeChips (variantChips, { "Base", "Colore", "Plus", "Sync", "Light", "Ghost", "Percussioni", "Push" }, fVariant, 336, 110);
+
     const char* heads[] = { "GENERE", "SOTTOGENERE", "PRESET", "ASCOLTA" };
     const int hx[] = { 290, 440, 660, 1072 };
-    for (int i = 0; i < 4; ++i) caption (heads[i], pg).setBounds (hx[i], 88, 160, 18);
+    for (int i = 0; i < 4; ++i) caption (heads[i], pg).setBounds (hx[i], 138, 160, 18);
 
     pg.addAndMakeVisible (browserList);
-    browserList.setBounds (250, 110, 882, 454);
-    browserList.setRowHeight (34);
+    browserList.setBounds (250, 158, 882, 406);
+    browserList.setRowHeight (32);
     browserList.setColour (juce::ListBox::backgroundColourId, juce::Colour (0xe60b0a09));
     browserList.setColour (juce::ListBox::outlineColourId, Colours::panelLine);
     browserList.setOutlineThickness (1);
@@ -984,7 +1056,7 @@ void MayDrummerEditor::buildBrowserPage()
     browserPlay.onClick = [this] { proc.setParam ("part", 0.0f); proc.setParam ("playMode", 0.0f); };
     browserGo.onClick = [this] { showPage (0); };
 
-    auto& h = caption ("Clic sulla stellina per aggiungere o togliere un preferito. Doppio clic per aprirlo nel Drummer.", pg);
+    auto& h = caption ("Stellina = preferito. Doppio clic per aprirlo nel Drummer.", pg);
     h.setBounds (636, 776, 500, 32);
     h.setFont (uiFont (12.0f));
     h.setColour (juce::Label::textColourId, Colours::textDim);
@@ -994,29 +1066,66 @@ void MayDrummerEditor::buildBrowserPage()
 void MayDrummerEditor::rebuildBrowser()
 {
     auto& lib = PatternLibrary::get();
-    const auto q = searchBox.getText().trim().toLowerCase();
+    juce::StringArray terms;
+    terms.addTokens (searchBox.getText().toLowerCase(), " ", "");
+    terms.removeEmptyStrings();
     const bool onlyFav = favOnly.getToggleState();
 
-    genreList.items.clear();
-    genreList.items.push_back ({ -1, "Tutti", lib.totalPatterns() });
-    genreList.items.push_back ({ -2, "Preferiti", proc.numFavourites() });
+    auto& items = genreList.items;
+    items.clear();
+    items.push_back ({ -1, -1, "Tutti", lib.totalPatterns(), false });
+    items.push_back ({ -2, -1, "Preferiti", proc.numFavourites(), false });
+    items.push_back ({ -3, -1, "GENERI", 0, true });
     for (int g = 0; g < NumStyles; ++g)
-        genreList.items.push_back ({ g, PatternLibrary::styleName (g), PatternLibrary::subsPerStyle * PatternLibrary::presetsPerSub });
+    {
+        items.push_back ({ g, -1, juce::String (g == browserGenre ? "- " : "+ ") + PatternLibrary::styleName (g),
+                           PatternLibrary::subsPerStyle * PatternLibrary::presetsPerSub, false });
+        if (g == browserGenre)
+        {
+            auto subs = lib.subNames (g);
+            for (int s = 0; s < subs.size(); ++s) items.push_back ({ g, s, subs[s], PatternLibrary::presetsPerSub, false });
+        }
+    }
     genreList.selected = browserGenre;
+    genreList.selectedSub = browserSub;
+    genreList.setSize (200, (int) items.size() * 30 + 4);
     genreList.repaint();
 
-    browserModel.rows.clear();
+    auto mark = [] (std::vector<std::unique_ptr<juce::TextButton>>& v, const juce::String& cur)
+    { for (auto& b : v) b->setToggleState ((cur.isEmpty() && b->getButtonText() == "Tutti") || b->getButtonText() == cur, juce::dontSendNotification); };
+    mark (energyChips, fEnergy);
+    mark (feelChips, fFeel);
+    mark (variantChips, fVariant);
+
+    auto& rows = browserModel.rows;
+    rows.clear();
+    int count = 0;
     for (int g = 0; g < NumStyles; ++g)
         for (int s = 0; s < PatternLibrary::subsPerStyle; ++s)
+        {
+            std::vector<int> found;
             for (int p = 0; p < PatternLibrary::presetsPerSub; ++p)
             {
+                const auto& pat = lib.getPattern (g, s, p);
                 const bool fav = proc.isFavourite (g, s, p);
                 if (browserGenre >= 0 && g != browserGenre) continue;
+                if (browserSub >= 0 && s != browserSub) continue;
                 if ((browserGenre == -2 || onlyFav) && ! fav) continue;
-                if (q.isNotEmpty() && ! lib.getPattern (g, s, p).fullName.toLowerCase().contains (q)) continue;
-                browserModel.rows.push_back ({ g, s, p });
+                if (fEnergy.isNotEmpty() && pat.energy != fEnergy) continue;
+                if (fFeel.isNotEmpty() && pat.feel != fFeel) continue;
+                if (fVariant.isNotEmpty() && pat.vgroup != fVariant) continue;
+                bool ok = true;
+                for (auto& t : terms) if (! pat.searchText.contains (t)) { ok = false; break; }
+                if (ok) found.push_back (p);
             }
-    browserCount.setText (juce::String ((int) browserModel.rows.size()) + " preset", juce::dontSendNotification);
+            if (found.empty()) continue;
+            const auto& first = lib.getPattern (g, s, found[0]);
+            rows.push_back ({ true, g, s, -1, juce::String (PatternLibrary::styleName (g)) + " / " + lib.subNames (g)[s]
+                                              + "      " + juce::String ((int) found.size()) + " preset, " + first.feel });
+            for (int p : found) rows.push_back ({ false, g, s, p, {} });
+            count += (int) found.size();
+        }
+    browserCount.setText (juce::String (count) + " preset", juce::dontSendNotification);
     browserList.updateContent();
     browserList.repaint();
 }
@@ -1024,22 +1133,33 @@ void MayDrummerEditor::rebuildBrowser()
 void MayDrummerEditor::BrowserModel::paintListBoxItem (int row, juce::Graphics& g, int w, int h, bool)
 {
     if (row < 0 || row >= (int) rows.size()) return;
-    const auto [gg, ss, pp] = rows[(size_t) row];
+    const auto& r = rows[(size_t) row];
+    if (r.header)
+    {
+        g.fillAll (juce::Colour (0xff221d17));
+        g.setColour (Colours::gold);
+        g.setFont (uiFont (13.0f, true));
+        g.drawText (r.text, 12, 0, w - 24, h, juce::Justification::centredLeft);
+        return;
+    }
     auto& proc = ed.proc;
-    const bool current = gg == (int) proc.getParam ("genre") && ss == (int) proc.getParam ("sub") && pp == (int) proc.getParam ("preset");
+    const bool current = r.g == (int) proc.getParam ("genre") && r.s == (int) proc.getParam ("sub") && r.p == (int) proc.getParam ("preset");
     if (current) g.fillAll (juce::Colour (0xff3a2d18));
     g.setColour (juce::Colour (0x0dffffff));
     g.drawHorizontalLine (h - 1, 0.0f, (float) w);
 
-    drawStar (g, juce::Rectangle<float> (10.0f, (float) h * 0.5f - 9.0f, 18.0f, 18.0f), proc.isFavourite (gg, ss, pp));
-    const auto& pat = PatternLibrary::get().getPattern (gg, ss, pp);
+    drawStar (g, juce::Rectangle<float> (10.0f, (float) h * 0.5f - 9.0f, 18.0f, 18.0f), proc.isFavourite (r.g, r.s, r.p));
+    const auto& pat = PatternLibrary::get().getPattern (r.g, r.s, r.p);
     g.setColour (current ? juce::Colours::white : Colours::cream);
     g.setFont (uiFont (14.0f, current));
-    g.drawText (PatternLibrary::styleName (gg), 40, 0, 150, h, juce::Justification::centredLeft);
-    g.drawText (PatternLibrary::get().subNames (gg)[ss], 190, 0, 220, h, juce::Justification::centredLeft);
-    g.drawText (pat.name, 410, 0, 300, h, juce::Justification::centredLeft);
+    g.drawText (PatternLibrary::styleName (r.g), 40, 0, 150, h, juce::Justification::centredLeft);
+    g.drawText (PatternLibrary::get().subNames (r.g)[r.s], 190, 0, 220, h, juce::Justification::centredLeft);
+    g.drawText (pat.name, 410, 0, 180, h, juce::Justification::centredLeft);
+    g.setColour (Colours::textDim);
+    g.setFont (uiFont (12.0f));
+    g.drawText (pat.energy, 590, 0, 120, h, juce::Justification::centredLeft);
 
-    auto c = juce::Rectangle<float> ((float) w - 44.0f, (float) h * 0.5f - 13.0f, 26.0f, 26.0f);
+    auto c = juce::Rectangle<float> ((float) w - 44.0f, (float) h * 0.5f - 12.0f, 24.0f, 24.0f);
     g.setColour (juce::Colour (0xff5a544b));
     g.drawEllipse (c, 1.5f);
     juce::Path tri;
@@ -1051,10 +1171,10 @@ void MayDrummerEditor::BrowserModel::paintListBoxItem (int row, juce::Graphics& 
 
 void MayDrummerEditor::BrowserModel::listBoxItemClicked (int row, const juce::MouseEvent& e)
 {
-    if (row < 0 || row >= (int) rows.size()) return;
-    const auto [gg, ss, pp] = rows[(size_t) row];
-    if (e.x < 38) { ed.proc.toggleFavourite (gg, ss, pp); ed.rebuildBrowser(); return; }
-    ed.proc.loadPattern (gg, ss, pp);
+    if (row < 0 || row >= (int) rows.size() || rows[(size_t) row].header) return;
+    const auto& r = rows[(size_t) row];
+    if (e.x < 38) { ed.proc.toggleFavourite (r.g, r.s, r.p); ed.rebuildBrowser(); return; }
+    ed.proc.loadPattern (r.g, r.s, r.p);
     if (e.x > ed.browserList.getWidth() - 70)
     {
         ed.proc.setParam ("part", 0.0f);
@@ -1066,15 +1186,17 @@ void MayDrummerEditor::BrowserModel::listBoxItemClicked (int row, const juce::Mo
 
 void MayDrummerEditor::BrowserModel::listBoxItemDoubleClicked (int row, const juce::MouseEvent&)
 {
-    if (row < 0 || row >= (int) rows.size()) return;
-    const auto [gg, ss, pp] = rows[(size_t) row];
-    ed.proc.loadPattern (gg, ss, pp);
+    if (row < 0 || row >= (int) rows.size() || rows[(size_t) row].header) return;
+    const auto& r = rows[(size_t) row];
+    ed.proc.loadPattern (r.g, r.s, r.p);
     ed.showPage (0);
 }
 
 void MayDrummerEditor::layoutDrummer() {}
 void MayDrummerEditor::layoutSong() {}
 void MayDrummerEditor::layoutMap() {}
+
+namespace { const PatternLibrary& lib() { return PatternLibrary::get(); } }
 
 void MayDrummerEditor::timerCallback()
 {
@@ -1097,7 +1219,11 @@ void MayDrummerEditor::timerCallback()
         if (! pad.isMouseButtonDown()) snapshotPreviews();
         for (int i = 0; i < NumPieces; ++i)
             noteSliders[(size_t) i].setValue (proc.getNote (i), juce::dontSendNotification);
-        if (page == 3) { rebuildBrowser(); browserView.repaint(); }
+        if (page == 3) { browserList.repaint(); genreList.repaint(); browserView.repaint(); }
+        {
+            const auto& cp = proc.currentPattern();
+            presetInfo.setText (juce::String::fromUTF8 ("\xc2\xb7  ") + lib().subNames (cp.style)[cp.sub] + ": " + cp.energy + ", " + cp.feel, juce::dontSendNotification);
+        }
     }
 
     static const char* lvNames[] = { "ESSENZIALE", "MINIMO", "SEMPLICE", "PULITO", "ASCIUTTO", "ORIGINALE",

@@ -9,7 +9,7 @@ const char* paramIds[] = {
     "genre", "sub", "preset", "part", "meterHost", "meter", "bpmHost", "bpm", "bars", "feelMode", "swing", "swing16",
     "timeFeel", "mdX", "mdY", "humTiming", "humVel", "volume", "feel", "ghost", "hatAccent", "cymbals", "crash", "seed",
     "playMode", "followHost", "preview", "channel", "songBars", "sectionBars", "fillEvery", "ending", "countIn", "altRiff",
-    "level", "sideStick", "alt", "mute0", "mute1", "mute2", "mute3", "mute4", "mute5"
+    "level", "sideStick", "alt", "kitOn", "kitVol", "mute0", "mute1", "mute2", "mute3", "mute4", "mute5"
 };
 
 struct MeterDef { const char* name; int num, den; };
@@ -67,6 +67,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout MayDrummerProcessor::createL
     l.add (integer ("level", "Livello complessita", -5, 5, 0));
     l.add (choice ("sideStick", "Rullante", StringArray { "Normale", "Side stick Main", "Side stick sempre" }, 0));
     l.add (integer ("alt", "Ritmo alternativo", 0, 99999, 0));
+    l.add (boolean ("kitOn", "Suoni interni", true));
+    l.add (pct ("kitVol", "Volume kit interno", 70.0f));
     l.add (integer ("seed", "Seed", 1, 9999, 1));
     l.add (choice ("playMode", "Riproduzione", StringArray { "Loop parte", "Song" }, 0));
     l.add (boolean ("followHost", "Segui trasporto DAW", true));
@@ -250,7 +252,7 @@ void MayDrummerProcessor::regenerateNow()
 
 void MayDrummerProcessor::parameterChanged (const juce::String& id, float)
 {
-    if (id == "preview" || id == "followHost" || id == "channel") return;
+    if (id == "preview" || id == "followHost" || id == "channel" || id == "kitOn" || id == "kitVol") return;
     triggerAsyncUpdate();
 }
 
@@ -295,6 +297,7 @@ void MayDrummerProcessor::prepareToPlay (double sr, int)
 {
     sampleRate = sr;
     numPendingOffs = 0;
+    synth.prepare (sr);
 }
 
 void MayDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
@@ -316,7 +319,12 @@ void MayDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             continue;
         }
         out.addEvent (msg, meta.samplePosition);
+        if (msg.isNoteOn() && getParam ("kitOn") > 0.5f)
+            for (int p = 0; p < NumPieces; ++p)
+                if (noteMap[(size_t) p].load() == msg.getNoteNumber()) { synth.trigger (p, msg.getVelocity(), meta.samplePosition); break; }
     }
+    const bool kitOn = getParam ("kitOn") > 0.5f;
+    const float kitGain = getParam ("kitVol") / 100.0f * 1.4f;
 
     bool hostPlaying = false;
     double ppqStart = 0.0;
@@ -354,6 +362,7 @@ void MayDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         for (int i = 0; i < numPendingOffs; ++i)
             out.addEvent (juce::MidiMessage::noteOff (pendingOffs[(size_t) i].channel, pendingOffs[(size_t) i].note), 0);
         numPendingOffs = 0;
+        if (kitOn) synth.render (buffer, kitGain);
         midi.swapWith (out);
         return;
     }
@@ -379,6 +388,7 @@ void MayDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
                 const int offset = juce::jlimit (0, numSamples - 1, (int) ((occ - ppqStart) * samplesPerPPQ));
                 const int note = noteMap[(size_t) e.piece].load();
                 out.addEvent (juce::MidiMessage::noteOn (channel, note, (juce::uint8) e.vel), offset);
+                if (kitOn) synth.trigger (e.piece, e.vel, offset);
                 if (numPendingOffs < (int) pendingOffs.size())
                     pendingOffs[(size_t) numPendingOffs++] = { note, channel, offset + (int) (samplesPerPPQ / 8.0) };
             }
@@ -387,6 +397,8 @@ void MayDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         if (rel < 0) rel += len;
         playPosition = rel / len;
     }
+
+    if (kitOn) synth.render (buffer, kitGain);
 
     // Note-off in sospeso (anche quelli appena creati)
     for (int i = 0; i < numPendingOffs;)

@@ -2,6 +2,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "DrumGenerator.h"
+#include "DrumSynth.h"
 #include <set>
 
 class MayDrummerProcessor : public juce::AudioProcessor,
@@ -94,6 +95,7 @@ private:
     mutable juce::String altKey;
     juce::String lastPatternKey;
 
+    may::DrumSynth synth;
     juce::SpinLock seqLock;
     may::DrumSequence playSeq;    // thread audio
 
