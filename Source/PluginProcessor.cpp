@@ -89,6 +89,13 @@ MayDrummerProcessor::MayDrummerProcessor()
     : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "MayDrummer", createLayout())
 {
+    pChannel = apvts.getRawParameterValue ("channel");
+    pFollow  = apvts.getRawParameterValue ("followHost");
+    pPreview = apvts.getRawParameterValue ("preview");
+    pKitOn   = apvts.getRawParameterValue ("kitOn");
+    pKitVol  = apvts.getRawParameterValue ("kitVol");
+    pBpmHost = apvts.getRawParameterValue ("bpmHost");
+    pBpm     = apvts.getRawParameterValue ("bpm");
     resetNoteMap();
     loadFavourites();
     // pulizia delle cartelle temporanee dei trascinamenti precedenti (piu vecchie di un giorno)
@@ -204,7 +211,7 @@ bool MayDrummerProcessor::saveUserPreset (const juce::String& rawName)
     auto dir = userPresetFolder();
     dir.createDirectory();
     const bool ok = xml->writeTo (dir.getChildFile (name + ".maydrummer"));
-    if (ok) { currentUserPreset = name; generation++; }
+    if (ok) { setUserPresetName (name); generation++; }
     return ok;
 }
 
@@ -224,7 +231,7 @@ bool MayDrummerProcessor::loadUserPreset (const juce::String& name)
     lastPatternKey = {};   // non azzerare il ritmo alternativo salvato
     apvts.replaceState (state);
     setParam ("preview", previewWas);
-    currentUserPreset = safePresetName (name);
+    setUserPresetName (safePresetName (name));
     regenerateNow();
     return true;
 }
@@ -233,7 +240,7 @@ bool MayDrummerProcessor::deleteUserPreset (const juce::String& name)
 {
     auto f = userPresetFolder().getChildFile (safePresetName (name) + ".maydrummer");
     const bool ok = f.moveToTrash() || f.deleteFile();
-    if (ok && currentUserPreset == name) currentUserPreset = {};
+    if (ok && getUserPresetName() == name) setUserPresetName ({});
     generation++;
     return ok;
 }
@@ -249,8 +256,8 @@ void MayDrummerProcessor::loadPattern (int g, int s, int p)
 double MayDrummerProcessor::effectiveBpm() const
 {
     const double hb = hostBpm.load();
-    if (getParam ("bpmHost") > 0.5f && hb > 1.0) return hb;
-    return getParam ("bpm");
+    if (pBpmHost->load() > 0.5f && hb > 1.0) return hb;
+    return pBpm->load();
 }
 
 void MayDrummerProcessor::effectiveMeter (int& num, int& den) const
@@ -384,7 +391,8 @@ void MayDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
     const int numSamples = buffer.getNumSamples();
-    const int channel = juce::jlimit (1, 16, (int) getParam ("channel"));
+    if (numSamples <= 0) return;
+    const int channel = juce::jlimit (1, 16, (int) pChannel->load());
     if (mapChanged.exchange (false))
     {
         for (int i = 0; i < numPendingOffs; ++i)
@@ -405,12 +413,12 @@ void MayDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             continue;
         }
         out.addEvent (msg, meta.samplePosition);
-        if (msg.isNoteOn() && getParam ("kitOn") > 0.5f)
+        if (msg.isNoteOn() && pKitOn->load() > 0.5f)
             for (int p = 0; p < NumPieces; ++p)
                 if (noteMap[(size_t) p].load() == msg.getNoteNumber()) { synth.trigger (p, msg.getVelocity(), meta.samplePosition); break; }
     }
-    const bool kitOn = getParam ("kitOn") > 0.5f;
-    const float kitGain = getParam ("kitVol") / 100.0f * 1.4f;
+    const bool kitOn = pKitOn->load() > 0.5f;
+    const float kitGain = pKitVol->load() / 100.0f * 1.4f;
 
     bool hostPlaying = false;
     double ppqStart = 0.0;
@@ -427,8 +435,8 @@ void MayDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         }
     }
 
-    const bool follow = getParam ("followHost") > 0.5f;
-    const bool preview = getParam ("preview") > 0.5f;
+    const bool follow = pFollow->load() > 0.5f;
+    const bool preview = pPreview->load() > 0.5f;
     bool playing = false;
 
     if (hostPlaying && follow) playing = true;
@@ -577,7 +585,7 @@ void MayDrummerProcessor::getStateInformation (juce::MemoryBlock& dest)
     auto state = apvts.copyState();
     auto map = state.getOrCreateChildWithName ("NoteMap", nullptr);
     for (int i = 0; i < NumPieces; ++i) map.setProperty ("n" + juce::String (i), noteMap[(size_t) i].load(), nullptr);
-    state.setProperty ("presetName", currentUserPreset, nullptr);
+    state.setProperty ("presetName", getUserPresetName(), nullptr);
     if (auto xml = state.createXml()) copyXmlToBinary (*xml, dest);
 }
 
@@ -592,7 +600,7 @@ void MayDrummerProcessor::setStateInformation (const void* data, int size)
             if (map.isValid())
                 for (int i = 0; i < NumPieces; ++i)
                     noteMap[(size_t) i] = (int) map.getProperty ("n" + juce::String (i), gmNote (i));
-            currentUserPreset = state.getProperty ("presetName").toString();
+            setUserPresetName (state.getProperty ("presetName").toString());
             mapChanged = true;
             apvts.replaceState (state);
             triggerAsyncUpdate();

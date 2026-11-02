@@ -84,7 +84,11 @@ public:
     bool saveUserPreset (const juce::String& name);
     bool loadUserPreset (const juce::String& name);
     bool deleteUserPreset (const juce::String& name);
+    juce::String getUserPresetName() const { const juce::SpinLock::ScopedLockType l (nameLock); return currentUserPreset; }
+    void setUserPresetName (const juce::String& n) { const juce::SpinLock::ScopedLockType l (nameLock); currentUserPreset = n; }
+private:
     juce::String currentUserPreset;
+public:
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
@@ -96,6 +100,11 @@ private:
     juce::File writeSequence (const may::DrumSequence& seq, const juce::String& suffix);
 
     std::array<std::atomic<int>, may::NumPieces> noteMap;
+    // parametri letti dal thread audio, senza creare stringhe
+    std::atomic<float>* pChannel = nullptr; std::atomic<float>* pFollow = nullptr; std::atomic<float>* pPreview = nullptr;
+    std::atomic<float>* pKitOn = nullptr; std::atomic<float>* pKitVol = nullptr;
+    std::atomic<float>* pBpmHost = nullptr; std::atomic<float>* pBpm = nullptr;
+    juce::SpinLock nameLock;
     std::set<juce::String> favourites;
     juce::File favouritesFile() const;
     void loadFavourites();

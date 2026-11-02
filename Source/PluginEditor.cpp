@@ -187,7 +187,7 @@ void PatternView::paint (juce::Graphics& g)
 // ============================================================ PresetStrip
 int PresetStrip::indexAt (int x) const
 {
-    const int n = PatternLibrary::presetsPerSub;
+    const int n = perPage;
     return juce::jlimit (0, n - 1, x * n / juce::jmax (1, getWidth()));
 }
 
@@ -195,7 +195,8 @@ void PresetStrip::paint (juce::Graphics& g)
 {
     if (! names) return;
     auto list = names();
-    const int n = PatternLibrary::presetsPerSub;
+    const int n = perPage;
+    const int first = firstNumber ? firstNumber() : 0;
     const float w = (float) getWidth() / (float) n;
     const int sel = selected ? selected() : -1;
 
@@ -212,17 +213,18 @@ void PresetStrip::paint (juce::Graphics& g)
         auto tr = r.reduced (8.0f, 4.0f);
         g.setColour (Colours::gold);
         g.setFont (uiFont (15.0f, true));
-        g.drawText (juce::String (i + 1).paddedLeft ('0', 2), tr.removeFromTop (tr.getHeight() * 0.5f), juce::Justification::bottomLeft);
+        g.setFont (uiFont (13.0f, true));
+        g.drawText (juce::String (first + i + 1).paddedLeft ('0', 2), tr.removeFromTop (15.0f), juce::Justification::topLeft);
         g.setColour (on ? juce::Colours::white : Colours::cream);
-        g.setFont (uiFont (12.0f, on));
-        g.drawFittedText (list[i], tr.toNearestInt(), juce::Justification::topLeft, 1, 0.8f);
+        g.setFont (uiFont (10.5f, on));
+        g.drawFittedText (list[i], tr.toNearestInt(), juce::Justification::topLeft, 2, 0.85f);
     }
 }
 
 void PresetStrip::mouseDown (const juce::MouseEvent& e)
 {
     const int i = indexAt (e.x);
-    const float w = (float) getWidth() / (float) PatternLibrary::presetsPerSub;
+    const float w = (float) getWidth() / (float) perPage;
     if (e.position.x > w * (float) (i + 1) - 26.0f && e.position.y < 24.0f) { if (onStar) onStar (i); repaint(); return; }
     if (onSelect) onSelect (i);
 }
@@ -405,6 +407,7 @@ MayDrummerEditor::MayDrummerEditor (MayDrummerProcessor& p)
 MayDrummerEditor::~MayDrummerEditor()
 {
     stopTimer();
+    if (saveDialog != nullptr) { saveDialog->exitModalState (0); saveDialog->setLookAndFeel (nullptr); saveDialog.reset(); }
     setLookAndFeel (nullptr);
 }
 
@@ -534,18 +537,33 @@ void MayDrummerEditor::buildDrummerPage()
     presets.names = [this]
     {
         juce::StringArray a;
-        for (int i = 0; i < PatternLibrary::presetsPerSub; ++i)
-            a.add (PatternLibrary::get().getPattern ((int) proc.getParam ("genre"), (int) proc.getParam ("sub"), i).label);
+        for (int i = 0; i < PresetStrip::perPage; ++i)
+            a.add (PatternLibrary::get().getPattern ((int) proc.getParam ("genre"), (int) proc.getParam ("sub"), uiPage * PresetStrip::perPage + i).label);
         return a;
     };
+    presets.firstNumber = [this] { return uiPage * PresetStrip::perPage; };
+
+    pg.addAndMakeVisible (pagePrev);
+    pg.addAndMakeVisible (pageNext);
+    pg.addAndMakeVisible (pageLabel);
+    caption ("PAGINA", pg).setBounds (560, 116, 60, 20);
+    pagePrev.setBounds (622, 116, 26, 22);
+    pageLabel.setBounds (650, 116, 70, 22);
+    pageNext.setBounds (722, 116, 26, 22);
+    pageLabel.setJustificationType (juce::Justification::centred);
+    pageLabel.setFont (uiFont (12.5f, true));
+    pageLabel.setColour (juce::Label::textColourId, Colours::cream);
+    const int pages = PatternLibrary::presetsPerSub / PresetStrip::perPage;
+    pagePrev.onClick = [this, pages] { uiPage = (uiPage + pages - 1) % pages; presets.repaint(); };
+    pageNext.onClick = [this, pages] { uiPage = (uiPage + 1) % pages; presets.repaint(); };
 
     pg.addAndMakeVisible (presetInfo);
-    presetInfo.setBounds (196, 116, 520, 20);
+    presetInfo.setBounds (196, 116, 360, 20);
     presetInfo.setFont (uiFont (12.0f));
     presetInfo.setColour (juce::Label::textColourId, Colours::textDim);
     pg.addAndMakeVisible (quickSearch);
     quickSearch.setBounds (820, 116, 312, 24);
-    quickSearch.setTextToShowWhenEmpty ("Cerca tra 1600 preset (es. rock shuffle leggero)", Colours::textDim);
+    quickSearch.setTextToShowWhenEmpty ("Cerca tra 16000 preset (es. rock shuffle leggero)", Colours::textDim);
     quickSearch.setColour (juce::TextEditor::backgroundColourId, Colours::lcd);
     quickSearch.setColour (juce::TextEditor::textColourId, Colours::cream);
     quickSearch.setColour (juce::TextEditor::outlineColourId, Colours::panelLine);
@@ -562,10 +580,10 @@ void MayDrummerEditor::buildDrummerPage()
     };
     quickSearch.onReturnKey = openSearch;
     quickSearch.onTextChange = [this, openSearch] { if (quickSearch.getText().length() >= 3) openSearch(); };
-    presets.selected = [this] { return (int) proc.getParam ("preset"); };
-    presets.onSelect = [this] (int i) { proc.setParam ("preset", (float) i); };
-    presets.isFav = [this] (int i) { return proc.isFavourite ((int) proc.getParam ("genre"), (int) proc.getParam ("sub"), i); };
-    presets.onStar = [this] (int i) { proc.toggleFavourite ((int) proc.getParam ("genre"), (int) proc.getParam ("sub"), i); };
+    presets.selected = [this] { return (int) proc.getParam ("preset") - uiPage * PresetStrip::perPage; };
+    presets.onSelect = [this] (int i) { proc.setParam ("preset", (float) (uiPage * PresetStrip::perPage + i)); };
+    presets.isFav = [this] (int i) { return proc.isFavourite ((int) proc.getParam ("genre"), (int) proc.getParam ("sub"), uiPage * PresetStrip::perPage + i); };
+    presets.onStar = [this] (int i) { proc.toggleFavourite ((int) proc.getParam ("genre"), (int) proc.getParam ("sub"), uiPage * PresetStrip::perPage + i); };
     auto step = [this] (int d)
     {
         int idx = ((int) proc.getParam ("sub")) * PatternLibrary::presetsPerSub + (int) proc.getParam ("preset") + d;
@@ -936,7 +954,7 @@ void MayDrummerEditor::Content::paint (juce::Graphics& g)
     e.proc.effectiveMeter (num, den);
     g.setColour (Colours::gold);
     g.setFont (uiFont (11.0f, true));
-    g.drawFittedText (e.proc.currentUserPreset.isNotEmpty() ? "IMPOSTAZIONE: " + e.proc.currentUserPreset.toUpperCase()
+    g.drawFittedText (e.proc.getUserPresetName().isNotEmpty() ? "IMPOSTAZIONE: " + e.proc.getUserPresetName().toUpperCase()
                                                        : juce::String ("MAY STUDIO MIDI DRUMMER"),
                       lcd.reduced (10, 5).removeFromTop (14).toNearestInt(), juce::Justification::centredLeft, 1);
     g.setColour (Colours::cream);
@@ -1211,59 +1229,75 @@ void MayDrummerEditor::BrowserModel::listBoxItemDoubleClicked (int row, const ju
 // ---------------------------------------------------------------- Impostazioni salvate
 void MayDrummerEditor::askSaveName()
 {
-    auto* aw = new juce::AlertWindow ("Salva impostazioni",
-                                      "Dai un nome alle impostazioni attuali: genere, preset, misura, humanize, "
-                                      "May Drummer, mappa note e struttura della song.",
-                                      juce::MessageBoxIconType::NoIcon, this);
-    auto suggestion = proc.currentUserPreset.isNotEmpty() ? proc.currentUserPreset
-                                                          : proc.currentPattern().fullName.replace (" / ", " ");
-    aw->setLookAndFeel (&lnf);
-    aw->addTextEditor ("name", suggestion, "Nome");
-    aw->addButton ("SALVA", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    aw->addButton ("ANNULLA", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-    aw->enterModalState (true, juce::ModalCallbackFunction::create ([this, aw] (int result)
+    // La finestra appartiene all'editor: se chiudi il plug-in, si chiude con lui (nessun crash)
+    saveDialog = std::make_unique<juce::AlertWindow> ("Salva impostazioni",
+                                                      "Dai un nome alle impostazioni attuali: genere, preset, misura, humanize, "
+                                                      "May Drummer, mappa note e struttura della song.",
+                                                      juce::MessageBoxIconType::NoIcon, nullptr);
+    saveDialog->setLookAndFeel (&lnf);
+    const auto current = proc.getUserPresetName();
+    auto suggestion = current.isNotEmpty() ? current : proc.currentPattern().fullName.replace (" / ", " ");
+    saveDialog->addTextEditor ("name", suggestion, "Nome");
+    saveDialog->addButton ("SALVA", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    saveDialog->addButton ("ANNULLA", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    content.addAndMakeVisible (*saveDialog);
+    saveDialog->setCentrePosition (designW / 2, designH / 2);
+
+    juce::Component::SafePointer<MayDrummerEditor> safe (this);
+    saveDialog->enterModalState (true, juce::ModalCallbackFunction::create ([safe] (int result)
     {
-        if (result != 1) return;
-        const auto name = aw->getTextEditorContents ("name").trim();
-        if (name.isEmpty()) return;
-        if (proc.listUserPresets().contains (name) && name != proc.currentUserPreset)
+        if (safe == nullptr || safe->saveDialog == nullptr) return;
+        auto& ed = *safe;
+        const auto name = ed.saveDialog->getTextEditorContents ("name").trim();
+        juce::MessageManager::callAsync ([safe] { if (safe != nullptr) safe->saveDialog.reset(); });
+        if (result != 1 || name.isEmpty()) return;
+        if (ed.proc.listUserPresets().contains (name) && name != ed.proc.getUserPresetName())
         {
             juce::AlertWindow::showAsync (juce::MessageBoxOptions()
                                               .withTitle ("Sostituire?")
                                               .withMessage ("Esiste gia un'impostazione chiamata \"" + name + "\". Vuoi sostituirla?")
                                               .withButton ("SOSTITUISCI").withButton ("ANNULLA")
-                                              .withAssociatedComponent (this),
-                                          [this, name] (int r) { if (r == 1) proc.saveUserPreset (name); content.repaint(); });
+                                              .withAssociatedComponent (&ed),
+                                          [safe, name] (int r)
+                                          {
+                                              if (safe == nullptr) return;
+                                              if (r == 1) safe->proc.saveUserPreset (name);
+                                              safe->content.repaint();
+                                          });
             return;
         }
-        proc.saveUserPreset (name);
-        content.repaint();
-    }), true);
+        ed.proc.saveUserPreset (name);
+        ed.content.repaint();
+    }), false);
 }
 
 void MayDrummerEditor::showLoadMenu()
 {
     const auto names = proc.listUserPresets();
+    const auto current = proc.getUserPresetName();
     juce::PopupMenu m, del;
     m.addSectionHeader ("IMPOSTAZIONI SALVATE");
     if (names.isEmpty())
         m.addItem (-1, "Nessuna impostazione salvata: usa SALVA", false);
     for (int i = 0; i < names.size(); ++i)
     {
-        m.addItem (1 + i, names[i], true, names[i] == proc.currentUserPreset);
+        m.addItem (1 + i, names[i], true, names[i] == current);
         del.addItem (1001 + i, names[i]);
     }
     m.addSeparator();
     m.addSubMenu ("Elimina", del, ! names.isEmpty());
     m.addItem (2001, "Apri la cartella delle impostazioni");
 
-    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&loadBtn), [this, names] (int r)
+    juce::Component::SafePointer<MayDrummerEditor> safe (this);
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&loadBtn), [safe, names] (int r)
     {
+        if (safe == nullptr || r == 0) return;
+        auto& ed = *safe;
         if (r >= 1 && r <= names.size())
         {
-            proc.loadUserPreset (names[r - 1]);
-            snapshotPreviews();
-            content.repaint();
+            ed.proc.loadUserPreset (names[r - 1]);
+            ed.snapshotPreviews();
+            ed.content.repaint();
         }
         else if (r >= 1001 && r <= 1000 + names.size())
         {
@@ -1272,12 +1306,17 @@ void MayDrummerEditor::showLoadMenu()
                                               .withTitle ("Eliminare?")
                                               .withMessage ("Vuoi eliminare l'impostazione \"" + name + "\"?")
                                               .withButton ("ELIMINA").withButton ("ANNULLA")
-                                              .withAssociatedComponent (this),
-                                          [this, name] (int res) { if (res == 1) proc.deleteUserPreset (name); content.repaint(); });
+                                              .withAssociatedComponent (&ed),
+                                          [safe, name] (int res)
+                                          {
+                                              if (safe == nullptr) return;
+                                              if (res == 1) safe->proc.deleteUserPreset (name);
+                                              safe->content.repaint();
+                                          });
         }
         else if (r == 2001)
         {
-            auto dir = proc.userPresetFolder();
+            auto dir = ed.proc.userPresetFolder();
             dir.createDirectory();
             dir.revealToUser();
         }
@@ -1336,7 +1375,21 @@ void MayDrummerEditor::timerCallback()
         k->value.setText (t, juce::dontSendNotification);
     }
 
+    {
+        const int pr = (int) proc.getParam ("preset");
+        if (pr != lastPresetSeen) { uiPage = pr / PresetStrip::perPage; lastPresetSeen = pr; presets.repaint(); }
+        pageLabel.setText (juce::String (uiPage * PresetStrip::perPage + 1) + "-" + juce::String (uiPage * PresetStrip::perPage + PresetStrip::perPage),
+                           juce::dontSendNotification);
+    }
     const int part = (int) proc.getParam ("part");
+    {
+        juce::String t;
+        const auto st = proc.makeSettings();
+        const auto& cp = proc.currentPattern();
+        if (part >= PFill1 && part <= PFill3) t = juce::String (partName (part)) + ": " + DrumGenerator::fillName (DrumGenerator::fillRecipeFor (cp, st, part - PFill1));
+        else if (part >= PEnd1) t = juce::String (partName (part)) + ": " + DrumGenerator::endingName (DrumGenerator::endingRecipeFor (cp, st, part - PEnd1));
+        if (t != mainView.title) { mainView.title = t; mainView.repaint(); }
+    }
     const bool loop = proc.getParam ("playMode") < 0.5f;
     for (int i = 0; i < NumParts; ++i)
         partBtns[(size_t) i].setToggleState (loop && i == part, juce::dontSendNotification);

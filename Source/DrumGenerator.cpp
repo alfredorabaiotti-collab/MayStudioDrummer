@@ -296,6 +296,82 @@ void DrumGenerator::applyRiff (Bar& b, const Pattern& p, const GenSettings& s, j
     }
 }
 
+namespace
+{
+enum FillRecipe { FDown = 0, FSnareCresc, FPairs, FLinear, FEighths, FSyncRests, FUnison, FAccentGhost, FUp, FAround,
+                  FDoubleKick, FBuild, FTimbales, FJazz, FOpenHat, FClapRoll, FReggaeFlam, FShuffle, NumFillRecipes };
+enum EndRecipe { EFillCrash = 0, EStop, ERoll, EBigToms, EShort, EJazz, ELatin, ERiser, ESwell, NumEndRecipes };
+
+const std::vector<int>& fillList (int style)
+{
+    static const std::vector<std::vector<int>> l {
+        { FDown, FPairs, FLinear, FSyncRests, FUnison, FUp, FAround, FSnareCresc },          // Rock
+        { FDown, FSnareCresc, FPairs, FUp, FBuild, FOpenHat, FUnison },                      // Pop
+        { FAccentGhost, FSyncRests, FUnison, FLinear, FOpenHat, FPairs },                    // Funk
+        { FShuffle, FDown, FPairs, FEighths, FAround },                                      // Blues
+        { FDown, FPairs, FEighths, FSnareCresc, FAround },                                   // Country
+        { FJazz, FShuffle, FEighths, FAround },                                              // Jazz
+        { FDoubleKick, FDown, FUnison, FAround, FUp },                                       // Metal
+        { FSnareCresc, FDown, FPairs, FDoubleKick, FUnison },                                // Punk
+        { FReggaeFlam, FEighths, FUp, FSyncRests },                                          // Reggae
+        { FAccentGhost, FUnison, FSyncRests, FClapRoll, FLinear },                           // Hip Hop
+        { FAccentGhost, FPairs, FDown, FOpenHat, FSyncRests },                               // R&B Soul
+        { FOpenHat, FSnareCresc, FBuild, FPairs, FUnison },                                  // Disco
+        { FTimbales, FSyncRests, FEighths, FReggaeFlam },                                    // Latin
+        { FEighths, FUp, FDown, FSnareCresc },                                               // Ballad
+        { FSnareCresc, FPairs, FAccentGhost, FOpenHat, FDown },                              // Motown
+        { FBuild, FClapRoll, FSnareCresc, FUnison } };                                       // Electronic
+    return l[(size_t) juce::jlimit (0, (int) l.size() - 1, style)];
+}
+
+const std::vector<int>& endList (int style)
+{
+    static const std::vector<std::vector<int>> l {
+        { EFillCrash, EStop, EBigToms, ERoll }, { EFillCrash, EStop, ERoll, EShort }, { EStop, EShort, EFillCrash, ERoll },
+        { EStop, EFillCrash, EJazz }, { EFillCrash, EStop, EShort }, { EJazz, EStop, EFillCrash },
+        { EBigToms, EStop, ERoll }, { ERoll, EStop, EBigToms }, { EStop, EFillCrash, EShort },
+        { EShort, EStop, ERiser }, { EStop, EFillCrash, EShort }, { EStop, ERoll, EFillCrash },
+        { ELatin, EStop, EFillCrash }, { ESwell, EFillCrash, ERoll }, { EStop, EFillCrash, ERoll },
+        { ERiser, ERoll, EShort } };
+    return l[(size_t) juce::jlimit (0, (int) l.size() - 1, style)];
+}
+
+juce::uint32 presetHash (const Pattern& p, const GenSettings& s)
+{
+    juce::uint32 h = p.id * 2654435761u ^ (s.seed * 40503u);
+    h ^= h >> 13; h *= 0x5bd1e995u; h ^= h >> 15;
+    return h;
+}
+} // namespace
+
+int DrumGenerator::fillRecipeFor (const Pattern& p, const GenSettings& s, int slot)
+{
+    const auto& l = fillList (p.style);
+    const int n = (int) l.size();
+    return l[(size_t) (((int) (presetHash (p, s) % (juce::uint32) n) + slot) % n)];
+}
+
+int DrumGenerator::endingRecipeFor (const Pattern& p, const GenSettings& s, int which)
+{
+    const auto& l = endList (p.style);
+    const int n = (int) l.size();
+    return l[(size_t) (((int) ((presetHash (p, s) >> 7) % (juce::uint32) n) + which) % n)];
+}
+
+juce::String DrumGenerator::fillName (int r)
+{
+    static const char* n[] = { "Discesa tom", "Rullante crescendo", "Coppie", "Lineare", "Crome", "Sincopato", "Unisono",
+                               "Accenti e ghost", "Salita tom", "Giro del kit", "Doppia cassa", "Build-up", "Timbales",
+                               "Jazz", "Open hat", "Clap roll", "Flam reggae", "Shuffle" };
+    return n[juce::jlimit (0, (int) NumFillRecipes - 1, r)];
+}
+
+juce::String DrumGenerator::endingName (int r)
+{
+    static const char* n[] = { "Fill e crash", "Stop", "Rullata", "Gran finale tom", "Colpo secco", "Jazz", "Cha-cha-cha", "Riser e drop", "Swell" };
+    return n[juce::jlimit (0, (int) NumEndRecipes - 1, r)];
+}
+
 void DrumGenerator::applyFill (Bar& b, const Pattern& p, const GenSettings& s, int fillType, juce::Random& r)
 {
     const bool den8 = (s.meterDen == 8);
@@ -304,66 +380,197 @@ void DrumGenerator::applyFill (Bar& b, const Pattern& p, const GenSettings& s, i
     if (fillType == 3 && b.steps <= 4 * beatSteps) len = b.steps;
     len = juce::jlimit (1, b.steps, len);
     const int start = b.steps - len;
-
     b.clearRange (start, b.steps);
+    writeFill (b, p, fillRecipeFor (p, s, fillType - 1), start, len, fillType == 3, r);
+}
 
-    const int shape = (int) ((p.id + (juce::uint32) fillType * 3 + s.seed) % 4);
-    const bool triplet = (b.grid == 3);
+void DrumGenerator::writeFill (Bar& b, const Pattern& p, int recipe, int start, int len, bool firstHalfEighths, juce::Random& r)
+{
+    const int g = juce::jmax (1, b.stepsPerBeat);
+    const bool trip = (b.grid == 3);
+    auto put = [&] (int piece, int i, int v) { if (i >= 0 && i < b.steps) b.at (piece, i) = juce::jmax (b.get (piece, i), juce::jlimit (1, 127, v)); };
+    auto cresc = [&] (int rel, int lo, int hi) { return lo + (int) ((float) (hi - lo) * (float) rel / (float) juce::jmax (1, len - 1)); };
+    auto isEighth = [&] (int i) { return trip ? (i % 3 != 1) : (i % 2 == 0); };
+    const int down[] = { Snare, TomHi, TomMid, TomFloor };
+    const int up[] = { TomFloor, TomMid, TomHi, Snare };
 
-    auto velAt = [&] (int i) { return juce::jlimit (40, 127, 82 + (int) (40.0f * (float) (i - start) / (float) juce::jmax (1, len - 1))); };
-
-    if (p.style == SElectronic)
-    {
-        for (int i = start; i < b.steps; ++i)
-        {
-            const bool firstHalf = (fillType == 3 && i < start + len / 2);
-            if (firstHalf && ((i - start) % 2 != 0)) continue;
-            b.at (Snare, i) = juce::jlimit (40, 127, 50 + (int) (75.0f * (float) (i - start) / (float) juce::jmax (1, len - 1)));
-        }
-        b.at (Clap, b.steps - 1) = 115;
-        b.at (Kick, start) = 100;
-        return;
-    }
-
-    const int toms[] = { Snare, TomHi, TomMid, TomFloor };
     for (int i = start; i < b.steps; ++i)
     {
         const int rel = i - start;
         const float prog = (float) rel / (float) juce::jmax (1, len);
+        const bool onBeat = (i % g) == 0;
+        const bool skipHalf = firstHalfEighths && rel < len / 2 && ! isEighth (i);
+        const int v = cresc (rel, 80, 122) + (onBeat ? 6 : 0);
 
-        if (! triplet && fillType == 3 && rel < len / 2 && (rel % 2) != 0) continue;   // prima meta in crome
-
-        if (p.style == SJazz && chance (r, 0.3f)) continue;
-        if ((p.style == SFunk || p.style == SSoul || p.style == SHipHop) && chance (r, 0.25f))
+        switch (recipe)
         {
-            b.at (Snare, i) = 45;
-            continue;
-        }
-
-        int piece = Snare;
-        switch (shape)
-        {
-            case 0: piece = toms[juce::jlimit (0, 3, (int) (prog * 4.0f))]; break;
-            case 1: piece = (prog < 0.75f) ? (int) Snare : (int) TomFloor; break;
-            case 2: piece = (rel % 2 == 0) ? (int) Snare : toms[1 + juce::jlimit (0, 2, (int) (prog * 3.0f))]; break;
-            default:
+            case FDown:     if (! skipHalf) put (down[juce::jlimit (0, 3, (int) (prog * 4.0f))], i, v); if (onBeat && r.nextBool()) put (Kick, i, 95); break;
+            case FUp:       if (! skipHalf) put (up[juce::jlimit (0, 3, (int) (prog * 4.0f))], i, v); if (onBeat) put (Kick, i, 92); break;
+            case FSnareCresc: if (! skipHalf) put (Snare, i, cresc (rel, 45, 124)); if (onBeat) put (Kick, i, 90); break;
+            case FPairs:    if (! skipHalf) put (down[(rel / 2) % 4], i, v); break;
+            case FLinear:   { const int c = rel % 4; put (c == 0 ? (int) TomHi : c == 1 ? (int) TomMid : c == 2 ? (int) Kick : (int) TomFloor, i, v); break; }
+            case FEighths:  if (isEighth (i)) put (down[juce::jlimit (0, 3, (int) (prog * 4.0f))], i, onBeat ? v : v - 12); if (onBeat) put (Kick, i, 88); break;
+            case FSyncRests:
+                if (rel % 3 == 0) { const int c = (rel / 3) % 3; put (c == 0 ? (int) Snare : c == 1 ? (int) TomHi : (int) TomFloor, i, v); if (r.nextBool()) put (Kick, i, 95); }
+                break;
+            case FUnison:
             {
-                const int cyc = rel % 4;
-                piece = cyc == 0 ? (int) TomHi : cyc == 1 ? (int) TomMid : cyc == 2 ? (int) Kick : (int) TomFloor;
+                const int m = rel % 8;
+                if (m == 0 || m == 3 || m == 6) { put (Snare, i, 118); put (Kick, i, 115); if (m == 0 && rel == 0) put (Crash, i, 112); if (m == 6) put (TomFloor, i, 110); }
+                else if (m == 7 || m == 2) put (Snare, i, 42);
                 break;
             }
+            case FAccentGhost:
+                put (Snare, i, onBeat ? 115 : ((i % g) == g - 1 ? 95 : 40));
+                if (! onBeat && (i % g) == g / 2 && r.nextBool()) put (Kick, i, 90);
+                if (rel >= len - 2) put (rel == len - 1 ? (int) TomFloor : (int) TomHi, i, 110);
+                break;
+            case FAround:   if (! skipHalf) { if (rel % 2 == 0) put (Snare, i, v); else put (down[1 + juce::jlimit (0, 2, (int) (prog * 3.0f))], i, v); } if (onBeat) put (Kick, i, 95); break;
+            case FDoubleKick: put (Kick, i, 104); if (isEighth (i)) put (down[juce::jlimit (0, 3, (int) (prog * 4.0f))], i, v); break;
+            case FBuild:    { const bool firstHalf = rel < len / 2; if (! firstHalf || isEighth (i)) put (Snare, i, cresc (rel, 40, 125)); if (onBeat) put (Kick, i, 100); break; }
+            case FTimbales: put (rel % 2 == 0 ? (int) TomHi : (int) TomMid, i, onBeat ? 112 : 88); if (onBeat) put (Cowbell, i, 100); if (rel == len - 1) put (Crash, i, 105); break;
+            case FJazz:
+                if (r.nextFloat() < 0.55f) put (prog > 0.7f && r.nextBool() ? (int) Kick : (int) Snare, i, 55 + r.nextInt (30));
+                if (rel == len - 1) { put (Snare, i, 112); put (Kick, i, 108); }
+                if (onBeat) put (Ride, i, 85);
+                break;
+            case FOpenHat:
+                if (rel < len - g) { if ((i % g) == g / 2) put (HHOpen, i, 100); if (! onBeat && r.nextBool()) put (Snare, i, 45); if (onBeat) put (Kick, i, 95); }
+                else put (Snare, i, cresc (rel, 70, 124));
+                break;
+            case FClapRoll: if (rel >= len / 2 || isEighth (i)) put (Clap, i, cresc (rel, 45, 122)); if (onBeat) put (Kick, i, 100); break;
+            case FReggaeFlam:
+                if ((i % g) == g / 2 || (i % g) == g / 2 + 1) put (down[1 + juce::jlimit (0, 2, (int) (prog * 3.0f))], i, (i % g) == g / 2 ? 80 : 110);
+                if (onBeat) put (Kick, i, 92);
+                break;
+            case FShuffle:
+            {
+                const int k = trip ? i % 3 : i % 4;
+                const bool hit = trip ? (k != 1) : (k == 0 || k == 3);
+                if (hit) put (prog < 0.5f ? (int) Snare : down[1 + juce::jlimit (0, 2, (int) ((prog - 0.5f) * 6.0f))], i, v);
+                if (onBeat) put (Kick, i, 90);
+                break;
+            }
+            default: break;
         }
-        if (p.style == SLatin) piece = (rel % 2 == 0) ? (int) TomHi : (int) TomMid;
-
-        int v = velAt (i);
-        if ((i % b.stepsPerBeat) == 0) v = juce::jmin (127, v + 8);
-        b.at (piece, i) = v;
-
-        if (p.style == SMetal && (rel % 2 == 0)) b.at (Kick, i) = 105;
-        else if ((i % b.stepsPerBeat) == 0 && piece != Kick && chance (r, 0.5f)) b.at (Kick, i) = 95;
     }
     if (p.uses (HHPedal) || p.style == SJazz)
-        for (int i = start; i < b.steps; i += b.stepsPerBeat * 2) b.at (HHPedal, i) = 70;
+        for (int i = start; i < b.steps; i += g * 2) put (HHPedal, i, 70);
+}
+
+void DrumGenerator::applyEnding (Bar& b, const Pattern& p, const GenSettings& s, int recipe, bool lastBar, juce::Random& r)
+{
+    const int L = b.steps, g = juce::jmax (1, b.stepsPerBeat);
+    auto put = [&] (int piece, int i, int v) { if (i >= 0 && i < L) b.at (piece, i) = juce::jmax (b.get (piece, i), juce::jlimit (1, 127, v)); };
+    const bool heavy = (p.style == SMetal || p.style == SPunk);
+    const juce::uint32 h = presetHash (p, s);
+    const int var = (int) ((h >> 9) % 3);          // variante interna del finale, diversa da preset a preset
+    const int keep = var == 1 ? L / 2 : 0;         // con la variante 1 la prima meta resta groove
+
+    if (! lastBar)
+    {
+        switch (recipe)
+        {
+            case EFillCrash:
+            {
+                const int len = juce::jmin (L, 2 * g);
+                b.clearRange (L - len, L);
+                writeFill (b, p, fillRecipeFor (p, s, 4), L - len, len, false, r);
+                break;
+            }
+            case EStop:
+            {
+                static const std::vector<std::vector<float>> rh { { 0.5f, 0.875f }, { 0.5f, 0.625f, 0.75f }, { 0.375f, 0.75f }, { 0.5f, 0.667f, 0.833f } };
+                const auto& hits = rh[(size_t) ((b.grid == 3 || p.style == SJazz || p.style == SBlues) ? 3 : (int) ((h >> 4) % 3))];
+                const int first = juce::roundToInt (hits[0] * (float) L);
+                b.clearRange (first, L);
+                for (size_t k = 0; k < hits.size(); ++k)
+                {
+                    const int st = juce::jlimit (0, L - 1, juce::roundToInt (hits[k] * (float) L));
+                    put (Kick, st, 118); put (Snare, st, 112);
+                    if (k == 0 || k + 1 == hits.size()) put (Crash, st, 116);
+                }
+                break;
+            }
+            case ERoll:
+                b.clearRange (keep, L);
+                for (int i = keep; i < L; ++i)
+                {
+                    const float pr = (float) (i - keep) / (float) juce::jmax (1, L - 1 - keep);
+                    if (var == 2 && i < L / 2 && (i % 2) != 0 && b.grid == 4) continue;
+                    const int tomA = (h & 1) ? (int) TomHi : (int) TomMid;
+                    put (i >= L - g ? (i % 2 == 0 ? tomA : (int) TomFloor) : (int) Snare, i, 35 + (int) (90.0f * pr));
+                    if (i % g == 0) put (Kick, i, 70 + (int) (40.0f * pr));
+                }
+                break;
+            case EBigToms:
+            {
+                b.clearRange (keep, L);
+                if (keep == 0) put (Crash, 0, 115);
+                const int seqA[] = { TomHi, TomHi, TomMid, TomMid, TomFloor, TomFloor };
+                const int seqB[] = { TomFloor, TomFloor, TomMid, TomMid, TomHi, Snare };
+                const int* seq = var == 2 ? seqB : seqA;
+                const int step = (h & 2) ? 1 : 2;
+                for (int i = keep; i < L; ++i)
+                {
+                    const float pr = (float) (i - keep) / (float) juce::jmax (1, L - 1 - keep);
+                    put (seq[(i / step + (int) (pr * 2.0f)) % 6], i, 70 + (int) (52.0f * pr));
+                    if (i % 2 == 0) put (Kick, i, 100);
+                }
+                break;
+            }
+            case EJazz:
+                b.clearRange (L - g, L);
+                put (Snare, L - g, 70);
+                put (Kick, L - 1, 115); put (Crash, L - 1, 110); put (Snare, L - 1, 100);
+                break;
+            case ELatin:
+            {
+                const int len = juce::jmin (L, 2 * g);
+                b.clearRange (L - len, L);
+                writeFill (b, p, FTimbales, L - len, len, false, r);
+                break;
+            }
+            case ERiser:
+                b.clearRange (keep, L);
+                for (int i = keep; i < L; ++i)
+                {
+                    const bool firstHalf = i < keep + (L - keep) / 2;
+                    if (! firstHalf || i % 2 == 0) put (var == 2 ? (int) Clap : (int) Snare, i, 40 + (int) (85.0f * (float) (i - keep) / (float) juce::jmax (1, L - 1 - keep)));
+                    if (firstHalf && i % g == 0) put (Kick, i, 100);
+                }
+                put (var == 2 ? (int) Snare : (int) Clap, L - 1, 115);
+                break;
+            case ESwell:
+                for (auto& line : b.v) for (auto& x : line) x = (x * 7) / 10;
+                b.clearRange (L - 2 * g, L);
+                for (int i = juce::jmax (0, L - 2 * g); i < L; ++i) put (Ride, i, 30 + (int) (75.0f * (float) (i - (L - 2 * g)) / (float) juce::jmax (1, 2 * g - 1)));
+                put (Kick, juce::jmax (0, L - 2 * g), 80);
+                break;
+            default: break;   // EShort: groove invariato
+        }
+        return;
+    }
+
+    b.clearRange (0, L, false);
+    switch (recipe)
+    {
+        case EFillCrash: put (Crash, 0, 122); put (Kick, 0, 120); if (heavy) { put (China, 0, 112); put (Snare, 0, 115); } break;
+        case EStop:      put (Crash, 0, 122); put (Kick, 0, 120); put (Snare, 0, 115); break;
+        case ERoll:      put (Crash, 0, 122); put (Kick, 0, 120); put (var == 0 ? (int) TomFloor : (int) Snare, 0, 112); if (heavy && var != 1) put (China, 0, 112); break;
+        case EBigToms:
+            put (Crash, 0, 122); put (Kick, 0, 120); put (TomFloor, 0, 115);
+            for (int i = g; i < L - g; ++i) put (i % 2 == 0 ? (int) TomFloor : (int) TomMid, i, 60 + (int) (40.0f * (float) (i - g) / (float) juce::jmax (1, L - 2 * g)));
+            { const int fin = var == 1 ? L - 2 * g : L - g; put (Crash, fin, 124); put (Kick, fin, 124); put (Snare, fin, 122); }
+            break;
+        case EShort:     put (Crash, 0, 118); put (Kick, 0, 118); put (Snare, 0, 115); put (HHPedal, juce::jmin (L - 1, g / 2 + 1), 90); break;
+        case EJazz:      put (RideBell, 0, 110); put (Kick, 0, 100); put (Snare, 0, 85); break;
+        case ELatin:     put (Cowbell, 0, 110); put (Kick, 0, 112); put (Cowbell, g / 2, 110); put (Kick, g / 2, 112);
+                         put (Crash, g, 120); put (Kick, g, 120); put (TomMid, g, 112); break;
+        case ERiser:     put (Kick, 0, 127); put (Crash, 0, 120); put (var == 2 ? (int) Snare : (int) Clap, 0, 112); if (var == 0) put (Kick, g, 110); break;
+        case ESwell:     put (Crash, 0, 92); put (Kick, 0, 85); put (Ride, 0, 70); break;
+        default:         put (Crash, 0, 120); put (Kick, 0, 120); break;
+    }
 }
 
 // Frecce: da -5 (essenziale) a +5 (virtuoso), effetti cumulativi
@@ -451,45 +658,13 @@ void DrumGenerator::applyLevel (Bar& b, const Pattern& p, const GenSettings& s, 
 
 void DrumGenerator::applySpecial (Bar& b, const Pattern& p, const GenSettings& s, int special, juce::Random& r)
 {
-    juce::ignoreUnused (p, r);
-    switch (special)
+    if (special >= EndLast) { applyEnding (b, p, s, special - EndLast, true, r); return; }
+    if (special >= EndPen)  { applyEnding (b, p, s, special - EndPen, false, r); return; }
+    if (special == CountIn)
     {
-        case StopBar:
-        {
-            const int half = b.steps / 2;
-            b.clearRange (half, b.steps);
-            const int beatSteps = (s.meterDen == 8) ? 2 : b.grid;
-            for (int pos : { half, half + beatSteps + beatSteps / 2 })
-                if (pos < b.steps)
-                {
-                    b.at (Crash, pos) = 118; b.at (Kick, pos) = 118; b.at (Snare, pos) = 112;
-                }
-            break;
-        }
-        case RollBar:
-        {
-            b.clearRange (0, b.steps);
-            for (int i = 0; i < b.steps; ++i)
-            {
-                const float prog = (float) i / (float) juce::jmax (1, b.steps - 1);
-                const bool lastBeat = i >= b.steps - b.stepsPerBeat;
-                b.at (lastBeat ? (i % 2 == 0 ? (int) TomHi : (int) TomFloor) : (int) Snare, i) = juce::jlimit (30, 127, 35 + (int) (90.0f * prog));
-                if (i % b.stepsPerBeat == 0) b.at (Kick, i) = 70 + (int) (40.0f * prog);
-            }
-            break;
-        }
-        case HitBar1: case HitBar2: case HitBar3:
-            b.clearRange (0, b.steps, false);
-            b.at (Crash, 0) = 122; b.at (Kick, 0) = 120;
-            if (special == HitBar2) b.at (Snare, 0) = 115;
-            if (special == HitBar3) { b.at (China, 0) = 110; b.at (TomFloor, 0) = 110; }
-            break;
-        case CountIn:
-            b.clearRange (0, b.steps, false);
-            for (int i = 0; i < b.steps; i += b.stepsPerBeat * ((s.meterDen == 8 && s.meterNum % 3 == 0) ? 3 : 1))
-                b.at (SideStick, i) = (i == 0) ? 115 : 95;
-            break;
-        default: break;
+        b.clearRange (0, b.steps, false);
+        for (int i = 0; i < b.steps; i += b.stepsPerBeat * ((s.meterDen == 8 && s.meterNum % 3 == 0) ? 3 : 1))
+            b.at (SideStick, i) = (i == 0) ? 115 : 95;
     }
 }
 
@@ -501,7 +676,7 @@ DrumGenerator::Bar DrumGenerator::makeBar (const Pattern& p, const GenSettings& 
     if (s.sideStick == 2 || (s.sideStick == 1 && ! riff))
         for (int i = 0; i < b.steps; ++i)
             if (b.get (Snare, i) >= 55) { b.at (SideStick, i) = juce::jmax (b.get (SideStick, i), b.get (Snare, i)); b.at (Snare, i) = 0; }
-    if (special == None || special == StopBar) applyLevel (b, p, s, r);
+    if (special == None || (special >= EndPen && special < EndLast)) applyLevel (b, p, s, r);
     if (fill > 0) applyFill (b, p, s, fill, r);
     if (special != None) applySpecial (b, p, s, special, r);
     if (crash && s.crashOnOne && special != CountIn)
@@ -581,7 +756,7 @@ void DrumGenerator::emitBar (const Pattern& p, const GenSettings& sIn, int barId
     if (s.timeFeel == 2)
     {
         // Double-time: due "mezze battute" per battuta
-        const bool hit = (special == HitBar1 || special == HitBar2 || special == HitBar3 || special == CountIn);
+        const bool hit = (special >= EndLast || special == CountIn);
         Bar a = makeBar (p, s, barIdx * 2, riff, 0, hit ? special : None, crash, r);
         emit (a, startPPQ, 0.5, s, r, out);
         if (! hit)
@@ -623,8 +798,9 @@ DrumSequence DrumGenerator::renderPart (const Pattern& p, int part, const GenSet
         for (int i = 0; i < E; ++i)
         {
             int fill = 0, special = None;
-            if (i == E - 1) special = endType == 1 ? HitBar1 : endType == 2 ? HitBar2 : HitBar3;
-            else if (i == E - 2) { if (endType == 1) fill = 2; else special = endType == 2 ? StopBar : RollBar; }
+            const int rec = endingRecipeFor (p, s, endType - 1);
+            if (i == E - 1) special = EndLast + rec;
+            else if (i == E - 2) special = EndPen + rec;
             emitBar (p, s, i, false, fill, special, false, i * barLen, r, seq.events);
             seq.barKinds.push_back (i >= E - 2 ? 3 : 0);
         }
@@ -675,8 +851,9 @@ DrumSequence DrumGenerator::renderSong (const Pattern& p, const GenSettings& s)
         for (int i = 0; i < E; ++i)
         {
             int fill = 0, special = None;
-            if (i == E - 1) special = s.ending == 1 ? HitBar1 : s.ending == 2 ? HitBar2 : HitBar3;
-            else if (i == E - 2) { if (s.ending == 1) fill = 2; else special = s.ending == 2 ? StopBar : RollBar; }
+            const int rec = endingRecipeFor (p, s, s.ending - 1);
+            if (i == E - 1) special = EndLast + rec;
+            else if (i == E - 2) special = EndPen + rec;
             emitBar (p, s, body + i, false, fill, special, i == 0 && prevFill, bar * barLen, r, seq.events);
             seq.barKinds.push_back (3);
             ++bar;

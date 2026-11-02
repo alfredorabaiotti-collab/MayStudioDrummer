@@ -61,6 +61,8 @@ public:
     std::function<int()> selected;
     std::function<void (int)> onSelect;
     std::function<bool (int)> isFav;
+    std::function<int()> firstNumber;   // numero del primo preset della pagina
+    static constexpr int perPage = 10;
     std::function<void (int)> onStar;
     void paint (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent& e) override;
@@ -175,6 +177,7 @@ private:
     Content content { *this };
     juce::Image logo;
     juce::TooltipWindow tooltips { this, 600 };
+    std::unique_ptr<juce::AlertWindow> saveDialog;
 
     juce::TextButton saveBtn { "SALVA" }, loadBtn { "RICHIAMA" };
     void askSaveName();
@@ -234,6 +237,9 @@ private:
     juce::Slider kitVolSlider { juce::Slider::LinearBar, juce::Slider::TextBoxLeft };
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> kitVolAtt;
     juce::TextEditor quickSearch;
+    juce::TextButton pagePrev { "<" }, pageNext { ">" };
+    juce::Label pageLabel;
+    int uiPage = 0, lastPresetSeen = -1;
     juce::Label presetInfo;
     juce::Slider bpmSlider { juce::Slider::LinearBar, juce::Slider::TextBoxLeft };
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bpmAtt;

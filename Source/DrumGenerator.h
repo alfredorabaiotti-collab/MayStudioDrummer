@@ -33,7 +33,13 @@ public:
         }
     };
 
-    enum Special { None = 0, StopBar, RollBar, HitBar1, HitBar2, HitBar3, CountIn };
+    enum Special { None = 0, CountIn = 6, EndPen = 100, EndLast = 200 };   // EndPen + ricetta, EndLast + ricetta
+
+    // Ricette di fill e finali (diverse per genere e per preset)
+    static int fillRecipeFor (const Pattern& p, const GenSettings& s, int slot);
+    static int endingRecipeFor (const Pattern& p, const GenSettings& s, int which);
+    static juce::String fillName (int recipe);
+    static juce::String endingName (int recipe);
 
 private:
     static Bar emptyBar (const Pattern& p, const GenSettings& s);
@@ -41,6 +47,8 @@ private:
     static void adaptMeter (const Pattern& p, const GenSettings& s, int barIdx, Bar& b);
     static void applyRiff (Bar& b, const Pattern& p, const GenSettings& s, juce::Random& r);
     static void applyFill (Bar& b, const Pattern& p, const GenSettings& s, int fillType, juce::Random& r);
+    static void writeFill (Bar& b, const Pattern& p, int recipe, int start, int len, bool firstHalfEighths, juce::Random& r);
+    static void applyEnding (Bar& b, const Pattern& p, const GenSettings& s, int recipe, bool lastBar, juce::Random& r);
     static void applyLevel (Bar& b, const Pattern& p, const GenSettings& s, juce::Random& r);
     static void applySpecial (Bar& b, const Pattern& p, const GenSettings& s, int special, juce::Random& r);
     static Bar makeBar (const Pattern& p, const GenSettings& s, int barIdx, bool riff, int fill, int special,

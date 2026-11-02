@@ -27,6 +27,7 @@ public:
     void render (juce::AudioBuffer<float>& buffer, float gain)
     {
         const int n = buffer.getNumSamples();
+        if (buffer.getNumChannels() == 0 || n <= 0) { pending.clear(); return; }
         std::sort (pending.begin(), pending.end(), [] (const Trig& a, const Trig& b) { return a.offset < b.offset; });
         size_t next = 0;
         auto* L = buffer.getWritePointer (0);
@@ -67,6 +68,7 @@ private:
         int shape = 0;            // 0 sine, 1 triangolo, 2 quadra
         double phase = 0, phase2 = 0;
         float f0 = 0, f1 = 0, sweep = 0.1f, f2 = 0;
+        double curF = 0, fMul = 1;   // glissando calcolato in modo incrementale (niente pow per campione)
         float toneAmp = 0, toneAmp2 = 0, toneMul = 1, toneMul2 = 1;
         // rumore
         float noiseAmp = 0, noiseMul = 1, attack = 0;
@@ -104,7 +106,9 @@ private:
             float out = 0.0f;
             if (toneAmp > 1e-5f)
             {
-                const double f = (f1 > 0 && t < sweep) ? f0 * std::pow ((double) f1 / f0, t / sweep) : (f1 > 0 ? f1 : f0);
+                if (curF <= 0) { curF = f0; fMul = (f1 > 0) ? std::pow ((double) f1 / f0, 1.0 / (juce::jmax (0.001, (double) sweep) * sr)) : 1.0; }
+                const double f = curF;
+                if (f1 > 0 && t < sweep) curF *= fMul; else if (f1 > 0) curF = f1;
                 phase += f / sr;
                 out += wave (shape, phase) * toneAmp;
                 toneAmp *= toneMul;

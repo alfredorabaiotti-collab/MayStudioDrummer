@@ -533,11 +533,249 @@ juce::String linesKey (const Pattern& p)
 }
 } // namespace
 
+namespace
+{
+// ---------------- 15 nuovi elementi per le combinazioni (preset 11-100)
+int hpOf (const Pattern& p) { return p.uses (HHClosed) ? (int) HHClosed : (p.uses (Ride) ? (int) Ride : -1); }
+std::vector<juce::uint8>& lineOf (Pattern& p, int piece)
+{
+    auto& l = p.lines[(size_t) piece];
+    if (l.empty()) l.assign ((size_t) (p.stepsPerBar * p.coreBars), 0);
+    return l;
+}
+
+void opFour (Pattern& p) { for (int i = 0; i < p.stepsPerBar; i += p.grid) setIfEmpty (p, Kick, i, 100); }
+void opKick (Pattern& p, int k)
+{
+    static const std::vector<std::vector<int>> g4 { { 3, 10 }, { 6, 11 }, { 2, 9, 14 } }, g3 { { 2, 8 }, { 5, 11 }, { 1, 7 } };
+    for (int st : (p.grid == 4 ? g4 : g3)[(size_t) k])
+        if (! stepUsed (p, Snare, st) && ! stepUsed (p, SideStick, st)) setIfEmpty (p, Kick, st, 84);
+}
+void opKickA (Pattern& p) { opKick (p, 0); }
+void opKickB (Pattern& p) { opKick (p, 1); }
+void opKickC (Pattern& p) { opKick (p, 2); }
+void opUpbeat (Pattern& p)
+{
+    const int h = hpOf (p);
+    if (h < 0) return;
+    auto& l = p.lines[(size_t) h];
+    for (size_t i = 0; i < l.size(); ++i)
+    {
+        if (! l[i]) continue;
+        const int k = (int) i % p.stepsPerBar;
+        const bool off = p.grid == 4 ? k % 4 == 2 : k % 3 == 2;
+        const bool on = k % p.grid == 0;
+        l[i] = off ? 112 : (on ? 70 : l[i]);
+    }
+}
+void opOpen24 (Pattern& p)
+{
+    const std::vector<int> pos = p.grid == 4 ? std::vector<int> { 6, 14 } : std::vector<int> { 5, 11 };
+    for (int st : pos)
+    {
+        if (p.uses (HHClosed))
+        {
+            auto& l = p.lines[HHClosed];
+            for (int b = 0; b < p.coreBars; ++b) l[(size_t) (b * p.stepsPerBar + st)] = 0;
+            setIfEmpty (p, HHOpen, st, 96);
+        }
+        else setIfEmpty (p, RideBell, st, 96);
+    }
+}
+void opTom (Pattern& p)
+{
+    if (p.uses (HHClosed)) { moveLine (p, HHClosed, TomFloor, 80); moveLine (p, HHOpen, TomFloor, 95); }
+    else for (int i = 0; i < p.stepsPerBar; i += p.grid) setIfEmpty (p, TomFloor, i, 85);
+}
+void opHalf (Pattern& p)
+{
+    const int half = p.grid * 2;
+    for (int pc : { (int) Snare, (int) SideStick })
+    {
+        auto& l = p.lines[(size_t) pc];
+        if (l.empty()) continue;
+        bool had = false;
+        for (auto& v : l) if (v >= 90) { v = 0; had = true; }
+        if (had) setIfEmpty (p, pc, half, 118);
+    }
+    if (! p.uses (Snare) && ! p.uses (SideStick)) setIfEmpty (p, Snare, half, 118);
+}
+void opSnarePush (Pattern& p)
+{
+    const std::vector<std::pair<int, int>> a = p.grid == 4 ? std::vector<std::pair<int, int>> { { 14, 85 }, { 11, 60 } }
+                                                           : std::vector<std::pair<int, int>> { { 11, 85 }, { 8, 60 } };
+    for (auto [st, v] : a) if (! stepUsed (p, Kick, st)) setIfEmpty (p, Snare, st, v);
+}
+void opCross (Pattern& p)
+{
+    auto& l = p.lines[Snare];
+    if (l.empty()) return;
+    auto& x = lineOf (p, SideStick);
+    for (size_t i = 0; i < l.size() && i < x.size(); ++i)
+        if (l[i] >= 55) { x[i] = juce::jmax (x[i], l[i]); l[i] = 0; }
+}
+void opClap (Pattern& p)
+{
+    const auto& src = ! p.lines[Snare].empty() ? p.lines[Snare] : p.lines[SideStick];
+    if (src.empty()) return;
+    bool any = false;
+    std::vector<size_t> hits;
+    for (size_t i = 0; i < src.size(); ++i) if (src[i] >= 90) hits.push_back (i);
+    if (! hits.empty()) { auto& c = lineOf (p, Clap); for (auto i : hits) { c[i] = 100; any = true; } }
+    if (! any) for (int st : { p.grid, p.grid * 3 }) setIfEmpty (p, Clap, st, 100);
+}
+void opBell (Pattern& p) { for (int i = 0; i < p.stepsPerBar; i += p.grid) setIfEmpty (p, RideBell, i, 92); }
+void opBar2 (Pattern& p)
+{
+    if (p.coreBars == 1)
+    {
+        for (auto& l : p.lines) if (! l.empty()) { auto copy = l; l.insert (l.end(), copy.begin(), copy.end()); }
+        p.coreBars = 2;
+    }
+    const int b = p.stepsPerBar * (p.coreBars - 1), st = p.stepsPerBar - p.grid;
+    for (int i = st; i < p.stepsPerBar; ++i)
+    {
+        for (int h : { (int) HHClosed, (int) HHOpen, (int) Ride })
+            if (! p.lines[(size_t) h].empty()) p.lines[(size_t) h][(size_t) (b + i)] = 0;
+        lineOf (p, Snare)[(size_t) (b + i)] = (juce::uint8) (70 + juce::roundToInt (35.0f * (float) (i - st) / (float) juce::jmax (1, p.grid - 1)));
+    }
+}
+void opQuarterHat (Pattern& p)
+{
+    for (int h : { (int) HHClosed, (int) Ride, (int) HHOpen })
+    {
+        auto& l = p.lines[(size_t) h];
+        for (size_t i = 0; i < l.size(); ++i) if ((int) i % p.grid != 0) l[i] = 0;
+    }
+}
+void opHat16 (Pattern& p)
+{
+    const int h = hpOf (p);
+    if (h < 0) return;
+    for (int i = 0; i < p.stepsPerBar; ++i) if (! stepUsed (p, HHOpen, i)) setIfEmpty (p, h, i, 55);
+}
+
+struct Op { const char* name; void (*fn) (Pattern&); const char* group; };
+void opColourFn (Pattern& p) { applyVariantColour (p); }
+const std::vector<Op>& ops()
+{
+    static const std::vector<Op> o {
+        { "Colore", opColourFn, "Colore" }, { "Plus", applyVariantPlus, "Plus" }, { "Sync", applyVariantSync, "Sync" },
+        { "Light", applyVariantLight, "Light" }, { "Ghost", applyVariantGhost, "Ghost" }, { "Perc", applyVariantPerc, "Percussioni" },
+        { "Push", applyVariantPush, "Push" },
+        { "Four Floor", opFour, "Sync" }, { "Kick A", opKickA, "Sync" }, { "Kick B", opKickB, "Sync" }, { "Kick C", opKickC, "Sync" },
+        { "Upbeat", opUpbeat, "Colore" }, { "Open 2&4", opOpen24, "Colore" }, { "Tom Groove", opTom, "Colore" },
+        { "Half-Time", opHalf, "Light" }, { "Snare Push", opSnarePush, "Push" }, { "Cross Stick", opCross, "Percussioni" },
+        { "Clap", opClap, "Percussioni" }, { "Bell", opBell, "Colore" }, { "Bar 2 Fill", opBar2, "Push" },
+        { "Quarter Hat", opQuarterHat, "Light" }, { "16th Hat", opHat16, "Plus" } };
+    return o;
+}
+
+bool okPair (const juce::String& a, const juce::String& b)
+{
+    static const juce::StringArray bad { "Light|Plus", "Light|16th Hat", "Quarter Hat|16th Hat", "Plus|Quarter Hat", "Quarter Hat|Upbeat",
+                                         "Tom Groove|Quarter Hat", "Tom Groove|16th Hat", "Tom Groove|Upbeat", "Tom Groove|Open 2&4",
+                                         "Kick A|Kick B", "Kick A|Kick C", "Kick B|Kick C", "Cross Stick|Clap", "Colore|Tom Groove" };
+    return ! bad.contains (a + "|" + b) && ! bad.contains (b + "|" + a);
+}
+
+// Stesso generatore della simulazione (mulberry32): stessi numeri di preset, stessi groove
+struct Mulberry
+{
+    juce::uint32 a;
+    explicit Mulberry (juce::uint32 seed) : a (seed ? seed : 1u) {}
+    double next()
+    {
+        a += 0x6D2B79F5u;
+        juce::uint32 t = (a ^ (a >> 15)) * (a | 1u);
+        t = (t + ((t ^ (t >> 7)) * (t | 61u))) ^ t;
+        return (double) (t ^ (t >> 14)) / 4294967296.0;
+    }
+    int nextInt (int n) { return (int) std::floor (next() * n); }
+};
+
+template <typename T> std::vector<T> shuffled (std::vector<T> v, juce::uint32 seed)
+{
+    Mulberry r (seed);
+    for (int i = (int) v.size() - 1; i > 0; --i) std::swap (v[(size_t) i], v[(size_t) r.nextInt (i + 1)]);
+    return v;
+}
+
+struct Combos { std::vector<std::vector<int>> singles, pairs, triples; };
+const Combos& combos()
+{
+    static const Combos c = []
+    {
+        Combos x;
+        const auto& o = ops();
+        const int n = (int) o.size();
+        for (int i = 7; i < n; ++i) x.singles.push_back ({ i });
+        for (int i = 0; i < n; ++i)
+            for (int j = i + 1; j < n; ++j)
+                if (okPair (o[(size_t) i].name, o[(size_t) j].name)) x.pairs.push_back ({ i, j });
+        for (int i = 0; i < n; ++i)
+            for (int j = i + 1; j < n; ++j)
+                for (int k = j + 1; k < n; ++k)
+                    if (okPair (o[(size_t) i].name, o[(size_t) j].name) && okPair (o[(size_t) i].name, o[(size_t) k].name)
+                        && okPair (o[(size_t) j].name, o[(size_t) k].name))
+                        x.triples.push_back ({ i, j, k });
+        return x;
+    }();
+    return c;
+}
+
+Pattern basePattern (const Core& c, int s, int sub, int v)
+{
+    Pattern p;
+    p.style = s;
+    p.sub = sub;
+    p.grid = c.grid;
+    p.stepsPerBar = c.grid * 4;
+    p.id = v < 10 ? (juce::uint32) (s * 1000 + sub * 100 + v * 7 + 11) : (juce::uint32) (500000 + s * 100000 + sub * 1000 + v);
+    juce::StringArray rows;
+    rows.addTokens (c.data, "|", "");
+    int maxLen = 0;
+    for (auto& r : rows)
+    {
+        if (r.length() < 3) continue;
+        int piece = pieceFromChar ((char) r[0]);
+        if (piece < 0) continue;
+        auto steps = r.substring (2);
+        auto& line = p.lines[(size_t) piece];
+        line.clear();
+        for (int i = 0; i < steps.length(); ++i) line.push_back ((juce::uint8) velFromChar ((char) steps[i]));
+        maxLen = juce::jmax (maxLen, (int) line.size());
+    }
+    p.coreBars = juce::jmax (1, maxLen / p.stepsPerBar);
+    for (auto& l : p.lines) if (! l.empty()) l.resize ((size_t) (p.coreBars * p.stepsPerBar), 0);
+    return p;
+}
+
+void finishPattern (Pattern& p, int s, const Core& c, int v, const juce::String& label, const juce::String& vgroup)
+{
+    int hits = 0;
+    for (auto& l : p.lines) for (auto x : l) if (x > 0) ++hits;
+    const float perBar = (float) hits / (float) p.coreBars;
+    p.energy = perBar < 16 ? "Leggero" : (perBar < 28 ? "Medio" : "Intenso");
+    const auto& sn = p.uses (Snare) ? p.lines[Snare] : p.lines[SideStick];
+    bool anyStrong = false, onlyThree = true;
+    for (int i = 0; i < p.stepsPerBar && i < (int) sn.size(); ++i)
+        if (sn[(size_t) i] >= 90) { anyStrong = true; if (i != p.stepsPerBar / 2) onlyThree = false; }
+    p.feel = p.grid == 3 ? "Shuffle" : ((anyStrong && onlyThree) ? "Half-time" : "Dritto");
+    p.vgroup = vgroup;
+    p.label = label;
+    p.name = juce::String (v + 1).paddedLeft ('0', 2) + "  " + label;
+    p.fullName = juce::String (PatternLibrary::styleName (s)) + " / " + c.name + " / " + label;
+    p.searchText = (p.fullName + " " + p.energy + " " + p.feel + " " + p.vgroup + (p.coreBars > 1 ? " 2 battute" : "")).toLowerCase();
+}
+} // namespace
+
 PatternLibrary::PatternLibrary()
 {
     auto& all = cores();
     patterns.resize ((size_t) NumStyles);
     subs.resize ((size_t) NumStyles);
+    static const char* vgroups[] = { "Base", "Colore", "Plus", "Colore", "Sync", "Colore", "Light", "Ghost", "Percussioni", "Push" };
 
     for (int s = 0; s < NumStyles; ++s)
     {
@@ -549,37 +787,14 @@ PatternLibrary::PatternLibrary()
             const auto& c = styleCores[(size_t) (sub % (int) styleCores.size())];
             subs[(size_t) s].add (c.name);
             std::set<juce::String> seen;
+            auto& list = patterns[(size_t) s][(size_t) sub];
+            list.reserve ((size_t) presetsPerSub);
 
-            for (int v = 0; v < presetsPerSub; ++v)
+            // Preset 1-10: le varianti classiche
+            for (int v = 0; v < 10; ++v)
             {
-                Pattern p;
-                p.style = s;
-                p.sub = sub;
-                p.grid = c.grid;
-                p.stepsPerBar = c.grid * 4;
-                p.id = (juce::uint32) (s * 1000 + sub * 100 + v * 7 + 11);
-
-                juce::StringArray rows;
-                rows.addTokens (c.data, "|", "");
-                int maxLen = 0;
-                for (auto& r : rows)
-                {
-                    if (r.length() < 3) continue;
-                    int piece = pieceFromChar ((char) r[0]);
-                    if (piece < 0) continue;
-                    auto steps = r.substring (2);
-                    auto& line = p.lines[(size_t) piece];
-                    line.clear();
-                    for (int i = 0; i < steps.length(); ++i)
-                        line.push_back ((juce::uint8) velFromChar ((char) steps[i]));
-                    maxLen = juce::jmax (maxLen, (int) line.size());
-                }
-                p.coreBars = juce::jmax (1, maxLen / p.stepsPerBar);
-                for (auto& l : p.lines)
-                    if (! l.empty()) l.resize ((size_t) (p.coreBars * p.stepsPerBar), 0);
-
+                Pattern p = basePattern (c, s, sub, v);
                 juce::String label;
-                static const char* vgroups[] = { "Base", "Colore", "Plus", "Colore", "Sync", "Colore", "Light", "Ghost", "Percussioni", "Push" };
                 switch (v)
                 {
                     case 0: label = "Base"; break;
@@ -593,38 +808,45 @@ PatternLibrary::PatternLibrary()
                     case 8: applyVariantPerc (p); label = "Perc"; break;
                     default: applyVariantPush (p); label = "Push"; break;
                 }
-
-                // Ogni preset deve essere diverso dagli altri del sottogenere
-                {
-                    std::vector<void (*) (Pattern&)> chain;
-                    if (v == 4 || v == 5) chain.push_back (altKick);
-                    if (v == 6) chain.push_back (scaleVel);
-                    if (v == 7) chain.push_back (forceGhost);
-                    for (auto f : { applyVariantPerc, forceGhost, altKick, applyVariantPush, scaleVel, accentCym }) chain.push_back (f);
-                    auto key = linesKey (p);
-                    size_t ci = 0;
-                    while (seen.count (key) && ci < chain.size()) { chain[ci++] (p); key = linesKey (p); }
-                    seen.insert (key);
-                }
-
-                // Carattere, feel e testo di ricerca
-                int hits = 0;
-                for (auto& l : p.lines) for (auto x : l) if (x > 0) ++hits;
-                const float perBar = (float) hits / (float) p.coreBars;
-                p.energy = perBar < 16 ? "Leggero" : (perBar < 28 ? "Medio" : "Intenso");
-                const auto& sn = ! p.lines[Snare].empty() ? p.lines[Snare] : p.lines[SideStick];
-                bool anyStrong = false, onlyThree = true;
-                for (int i = 0; i < p.stepsPerBar && i < (int) sn.size(); ++i)
-                    if (sn[(size_t) i] >= 90) { anyStrong = true; if (i != p.stepsPerBar / 2) onlyThree = false; }
-                p.feel = p.grid == 3 ? "Shuffle" : ((anyStrong && onlyThree) ? "Half-time" : "Dritto");
-                p.vgroup = vgroups[v];
-                p.label = label;
-
-                p.name = juce::String (v + 1).paddedLeft ('0', 2) + "  " + label;
-                p.fullName = juce::String (styleName (s)) + " / " + c.name + " / " + label;
-                p.searchText = (p.fullName + " " + p.energy + " " + p.feel + " " + p.vgroup + (p.coreBars > 1 ? " 2 battute" : "")).toLowerCase();
-                patterns[(size_t) s][(size_t) sub].push_back (std::move (p));
+                std::vector<void (*) (Pattern&)> chain;
+                if (v == 4 || v == 5) chain.push_back (altKick);
+                if (v == 6) chain.push_back (scaleVel);
+                if (v == 7) chain.push_back (forceGhost);
+                for (auto f : { applyVariantPerc, forceGhost, altKick, applyVariantPush, scaleVel, accentCym }) chain.push_back (f);
+                auto key = linesKey (p);
+                size_t ci = 0;
+                while (seen.count (key) && ci < chain.size()) { chain[ci++] (p); key = linesKey (p); }
+                seen.insert (key);
+                finishPattern (p, s, c, v, label, vgroups[v]);
+                list.push_back (std::move (p));
             }
+
+            // Preset 11-100: combinazioni degli elementi, tutte diverse tra loro
+            const auto& cb = combos();
+            const auto seed = (juce::uint32) (s * 7919 + sub * 104729 + 13);
+            auto cand = cb.singles;
+            for (auto& x : shuffled (cb.pairs, seed)) cand.push_back (x);
+            for (auto& x : shuffled (cb.triples, seed + 1)) cand.push_back (x);
+            int v = 10;
+            for (size_t ci = 0; v < presetsPerSub && ci < cand.size(); ++ci)
+            {
+                const auto& combo = cand[ci];
+                Pattern p = basePattern (c, s, sub, v);
+                juce::StringArray names;
+                for (int oi : combo)
+                {
+                    const auto& o = ops()[(size_t) oi];
+                    if (oi == 0) names.add (applyVariantColour (p));
+                    else { o.fn (p); names.add (o.name); }
+                }
+                const auto key = linesKey (p);
+                if (seen.count (key)) continue;
+                seen.insert (key);
+                finishPattern (p, s, c, v, names.joinIntoString (" + "), ops()[(size_t) combo[0]].group);
+                list.push_back (std::move (p));
+                ++v;
+            }
+            jassert ((int) list.size() == presetsPerSub);
         }
     }
 }

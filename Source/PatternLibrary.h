@@ -30,14 +30,14 @@ struct Pattern
     }
 };
 
-// Libreria: 16 generi x 10 sottogeneri x 10 preset = 1600 pattern
+// Libreria: 16 generi x 10 sottogeneri x 100 preset = 16000 pattern
 class PatternLibrary
 {
 public:
     static const PatternLibrary& get();
 
     static constexpr int subsPerStyle = 10;
-    static constexpr int presetsPerSub = 10;
+    static constexpr int presetsPerSub = 100;
 
     static const char* styleName (int s);
     static juce::StringArray styleNames();

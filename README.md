@@ -7,8 +7,8 @@ Plug-in VST3 (e AU su Mac) che genera tracce MIDI di batteria e le porta nella D
 1. **Genere**: 16 generi (Rock, Pop, Funk, Blues, Country, Jazz, Metal, Punk, Reggae, Hip Hop, R&B Soul, Disco, Latin, Ballad, Motown, Electronic).
 2. **Sottogenere**: 10 per genere (es. Rock: Classic Rock, Arena Rock, Hard Rock, Rock 16, Rock Shuffle, Tom Groove, Garage, Southern Rock, Alt Half-Time, Rock 2 Bar).
 3. **Misura e BPM**: 4/4, 3/4, 2/4, 5/4, 6/4, 7/4, 5/8, 6/8, 7/8, 9/8, 12/8. Con "Da progetto" vengono letti dalla DAW.
-4. **Pattern preset**: 10 per sottogenere (Base, Ride/Open Hat, Plus, Combinato, Sync, Sync colorato, Light, Ghost, Percussioni, Push). In totale 1600 pattern: 16 generi x 10 sottogeneri x 10 preset. Casella di ricerca rapida in alto a destra.
-5. **Main / Riff / Finale**: ogni pattern ha Main, Riff, 3 Fill e 3 Finali. Durata predefinita 2 battute (1, 2, 4 o 8).
+4. **Pattern preset**: 100 per sottogenere, a pagine di 10. I primi 10 sono le varianti classiche (Base, Ride/Open Hat, Plus, Sync, Light, Ghost, Percussioni, Push...), i successivi 90 combinano 22 elementi (Four Floor, Half-Time, Tom Groove, Cross Stick, Clap, Bar 2 Fill...). In totale 16000 pattern. Casella di ricerca rapida in alto a destra.
+5. **Main / Riff / Finale**: ogni pattern ha Main, Riff, 3 Fill e 3 Finali, scelti tra 18 tipi di fill e 9 tipi di finale secondo il genere e diversi da preset a preset. Durata predefinita 2 battute (1, 2, 4 o 8).
 6. **May Drummer**: quadrato con un puntino trascinabile. In alto = forte, in basso = leggero; a sinistra = dritto, a destra = imprevedibile. Al rilascio mostra a destra l'anteprima di Main, Riff e Finale; ogni riga si trascina nella DAW.
 
 Novità:
@@ -53,3 +53,8 @@ Il VST3 si trova in `build/MayStudioMidiDrummer_artefacts/Release/VST3/`.
 
 - **Windows**: copia `May Studio Midi Drummer.vst3` in `C:\Program Files\Common Files\VST3`.
 - **Mac**: copia il `.vst3` in `/Library/Audio/Plug-Ins/VST3` (e il `.component` in `/Library/Audio/Plug-Ins/Components` per Logic). Il plug-in non è firmato: la prima volta esegui `xattr -cr "/Library/Audio/Plug-Ins/VST3/May Studio Midi Drummer.vst3"` nel Terminale.
+
+## Verifiche di stabilita
+
+- pluginval (Tracktion) superato al livello di severita 10.
+- Stress test con AddressSanitizer: trasporto, cambi di misura e BPM, blocchi audio da 0 a 1000 campioni, buffer senza canali, apertura e chiusura dell'editor, salvataggi ed esportazioni, senza errori.
