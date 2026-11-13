@@ -1,6 +1,17 @@
 #pragma once
 #include "PluginProcessor.h"
 #include "MayLookAndFeel.h"
+#include "MayWelcome.h"
+
+// Colori della finestra di benvenuto e del pulsante Dona, in tinta con il plug-in
+inline may::WelcomeStyle drummerWelcomeStyle()
+{
+    may::WelcomeStyle s;
+    s.panel = juce::Colour (0xff1d1915); s.border = juce::Colour (0x33ffffff);
+    s.text = juce::Colour (0xfff1e6cf); s.dim = juce::Colour (0xffb9ad97);
+    s.accent = juce::Colour (0xffd8a94e); s.accentText = juce::Colour (0xff1a1208);
+    return s;
+}
 
 namespace may
 {
@@ -267,6 +278,12 @@ private:
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>> toggleAtts;
 
     int lastGeneration = -1, lastGenre = -1;
+
+    // Finestra di benvenuto (prima apertura) e pulsante "Dona" in basso a destra
+    may::Welcome welcome { "MayStudioMidiDrummer", "May Studio Midi Drummer",
+                           [] { return may::Welcome::storedEnglish(); },
+                           [] (bool en) { may::Welcome::storeEnglish (en); }, drummerWelcomeStyle() };
+    may::DonateButton donateBtn { [] { return may::Welcome::storedEnglish(); }, drummerWelcomeStyle() };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MayDrummerEditor)
 };

@@ -400,7 +400,13 @@ MayDrummerEditor::MayDrummerEditor (MayDrummerProcessor& p)
     setResizable (true, true);
     getConstrainer()->setFixedAspectRatio ((double) designW / designH);
     setResizeLimits (designW / 2, designH / 2, designW * 3 / 2, designH * 3 / 2);
+    addAndMakeVisible (donateBtn);
+    donateBtn.onClick = [this] { welcome.open(); };
+    welcome.onLanguageChanged = [this] { donateBtn.repaint(); };
+    addChildComponent (welcome);
+
     setSize ((int) (designW * 0.82), (int) (designH * 0.82));
+    welcome.showIfFirstTime();
     startTimerHz (30);
 }
 
@@ -416,6 +422,9 @@ void MayDrummerEditor::resized()
     const float scale = (float) getWidth() / (float) designW;
     content.setBounds (0, 0, designW, designH);
     content.setTransform (juce::AffineTransform::scale (scale));
+    donateBtn.setBounds (getWidth() - may::DonateButton::kWidth - 26, getHeight() - may::DonateButton::kHeight - 6,
+                         may::DonateButton::kWidth, may::DonateButton::kHeight);
+    welcome.setBounds (getLocalBounds());
 }
 
 void MayDrummerEditor::showPage (int p)

@@ -58,3 +58,9 @@ Il VST3 si trova in `build/MayStudioMidiDrummer_artefacts/Release/VST3/`.
 
 - pluginval (Tracktion) superato al livello di severita 10.
 - Stress test con AddressSanitizer: trasporto, cambi di misura e BPM, blocchi audio da 0 a 1000 campioni, buffer senza canali, apertura e chiusura dell'editor, salvataggi ed esportazioni, senza errori.
+
+## Sostieni il progetto · Support the project
+
+Il plug-in è gratuito. Alla prima apertura una finestra di benvenuto ringrazia per il download; il piccolo pulsante "Dona" in basso a destra la riapre. Se hai voglia di contribuire puoi fare un'offerta su PayPal a **alfredorabaiotti@gmail.com**.
+
+*The plug-in is free. A welcome window appears the first time it opens; the small "Donate" button at the bottom right reopens it. If you would like to contribute, you can donate on PayPal to **alfredorabaiotti@gmail.com**.*
