@@ -401,7 +401,14 @@ MayDrummerEditor::MayDrummerEditor (MayDrummerProcessor& p)
     getConstrainer()->setFixedAspectRatio ((double) designW / designH);
     setResizeLimits (designW / 2, designH / 2, designW * 3 / 2, designH * 3 / 2);
     addAndMakeVisible (donateBtn);
+    addAndMakeVisible (helpBtn);
+    addAndMakeVisible (footer);
     donateBtn.onClick = [this] { welcome.open(); };
+    helpBtn.onClick = [this]
+    {
+        may::showHelpMenu (helpBtn, may::Welcome::storedEnglish(), "May Studio Midi Drummer", JucePlugin_VersionString,
+                           juce::PluginHostType().getHostDescription(), {}, [this] { welcome.open(); });
+    };
     welcome.onLanguageChanged = [this] { donateBtn.repaint(); };
     addChildComponent (welcome);
 
@@ -424,6 +431,8 @@ void MayDrummerEditor::resized()
     content.setTransform (juce::AffineTransform::scale (scale));
     donateBtn.setBounds (getWidth() - may::DonateButton::kWidth - 26, getHeight() - may::DonateButton::kHeight - 6,
                          may::DonateButton::kWidth, may::DonateButton::kHeight);
+    helpBtn.setBounds (donateBtn.getX() - may::HelpButton::kSize - 6, donateBtn.getY(), may::HelpButton::kSize, may::HelpButton::kSize);
+    footer.setBounds (10, getHeight() - may::FooterLabel::kHeight - 8, may::FooterLabel::kWidth, may::FooterLabel::kHeight);
     welcome.setBounds (getLocalBounds());
 }
 

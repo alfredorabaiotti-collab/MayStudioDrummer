@@ -284,6 +284,8 @@ private:
                            [] { return may::Welcome::storedEnglish(); },
                            [] (bool en) { may::Welcome::storeEnglish (en); }, drummerWelcomeStyle() };
     may::DonateButton donateBtn { [] { return may::Welcome::storedEnglish(); }, drummerWelcomeStyle() };
+    may::HelpButton helpBtn { drummerWelcomeStyle() };
+    may::FooterLabel footer { JucePlugin_VersionString, juce::Colour (0xffb9ad97) };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MayDrummerEditor)
 };
